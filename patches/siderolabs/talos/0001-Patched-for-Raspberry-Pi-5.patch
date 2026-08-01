@@ -1,4 +1,4 @@
-From 340f70a2d671ed060ae52e96381580575e761daa Mon Sep 17 00:00:00 2001
+From bf7979c319c8333edc4c29ee3dc73d65a1cbeb62 Mon Sep 17 00:00:00 2001
 From: Josef Hofer <me@jhofer.de>
 Date: Sat, 14 Feb 2026 21:56:31 +0100
 Subject: [PATCH] Patched for Raspberry Pi 5
@@ -6,8 +6,11 @@ Subject: [PATCH] Patched for Raspberry Pi 5
 ---
  Makefile                                      |  18 +--
  hack/modules-arm64.txt                        | 113 ++++++++++++++----
+ .../v1alpha1/bootloader/sdboot/rpi5_test.go   |  61 ++++++++++
+ .../v1alpha1/bootloader/sdboot/sdboot.go      |  67 +++++++----
  .../runtime/v1alpha2/v1alpha2_controller.go   |  33 +++--
- 3 files changed, 115 insertions(+), 49 deletions(-)
+ 5 files changed, 218 insertions(+), 74 deletions(-)
+ create mode 100644 internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/rpi5_test.go
 
 diff --git a/Makefile b/Makefile
 index 9590b35d5..9eae00526 100644
@@ -313,6 +316,181 @@ index 9cb2afe5d..1b3d9395a 100644
 +kernel/sound/soundcore.ko
 +kernel/sound/usb/snd-usb-audio.ko
 +kernel/sound/usb/snd-usbmidi-lib.ko
+diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/rpi5_test.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/rpi5_test.go
+new file mode 100644
+index 000000000..31fb04b81
+--- /dev/null
++++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/rpi5_test.go
+@@ -0,0 +1,61 @@
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this
++// file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++package sdboot
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++	"golang.org/x/sys/unix"
++
++	"github.com/siderolabs/talos/pkg/machinery/constants"
++)
++
++func TestConfigureBootSelectionFallsBackToLoaderConfig(t *testing.T) {
++	t.Parallel()
++
++	mountPrefix := t.TempDir()
++	require.NoError(t, os.MkdirAll(filepath.Join(mountPrefix, constants.EFIMountPoint, "loader"), 0o755))
++
++	efiVariablesWritable, err := configureBootSelection(mountPrefix, "Talos-v1.13.7.efi", true, func(string, string) error {
++		return unix.EINVAL
++	})
++	require.NoError(t, err)
++	require.False(t, efiVariablesWritable)
++
++	loaderConfig, err := os.ReadFile(filepath.Join(mountPrefix, constants.EFIMountPoint, "loader", "loader.conf"))
++	require.NoError(t, err)
++	require.Equal(t, "default Talos-v1.13.7.efi\ntimeout 5\n", string(loaderConfig))
++}
++
++func TestConfigureBootSelectionDoesNotFallbackDuringInstall(t *testing.T) {
++	t.Parallel()
++
++	efiVariablesWritable, err := configureBootSelection(t.TempDir(), "Talos-v1.13.7.efi", false, func(string, string) error {
++		return unix.EINVAL
++	})
++	require.ErrorIs(t, err, unix.EINVAL)
++	require.False(t, efiVariablesWritable)
++}
++
++func TestConfigureBootSelectionUsesEFIVariablesWhenWritable(t *testing.T) {
++	t.Parallel()
++
++	var writes []string
++
++	efiVariablesWritable, err := configureBootSelection("", "Talos-v1.13.7.efi", false, func(name, value string) error {
++		writes = append(writes, name+"="+value)
++
++		return nil
++	})
++	require.NoError(t, err)
++	require.True(t, efiVariablesWritable)
++	require.Equal(t, []string{
++		"LoaderEntryDefault=Talos-v1.13.7.efi",
++		"LoaderConfigTimeout=5",
++	}, writes)
++}
+diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go
+index 694ea11a0..629bb21fe 100644
+--- a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go
++++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go
+@@ -316,7 +316,7 @@ func (c *Config) Install(opts options.InstallOptions) (*options.InstallResult, e
+ 		return nil, err
+ 	}
+ 
+-	return c.setup(opts, ukiFileName)
++	return c.setup(opts, ukiFileName, false)
+ }
+ 
+ // Upgrade the bootloader.
+@@ -368,7 +368,7 @@ func (c *Config) Upgrade(opts options.InstallOptions) (*options.InstallResult, e
+ 				return err
+ 			}
+ 
+-			installResult, err = c.setup(opts, ukiPath)
++			installResult, err = c.setup(opts, ukiPath, true)
+ 			if err != nil {
+ 				return err
+ 			}
+@@ -393,38 +393,37 @@ func (c *Config) Upgrade(opts options.InstallOptions) (*options.InstallResult, e
+ // Writes down the UKI and updates the EFI variables.
+ //
+ //nolint:gocyclo,cyclop
+-func (c *Config) setup(opts options.InstallOptions, ukiFileName string) (*options.InstallResult, error) {
++func (c *Config) setup(opts options.InstallOptions, ukiFileName string, loaderConfigFallback bool) (*options.InstallResult, error) {
+ 	opts.Printf("updating EFI variables")
+ 
+-	// set the new entry as a default one
+-	if err := WriteVariable(LoaderEntryDefaultName, ukiFileName); err != nil {
+-		return nil, err
+-	}
+-
+-	// set default 5 second boot timeout
+-	if err := WriteVariable(LoaderConfigTimeoutName, "5"); err != nil {
++	efiVariablesWritable, err := configureBootSelection(opts.MountPrefix, ukiFileName, loaderConfigFallback, WriteVariable)
++	if err != nil {
+ 		return nil, err
+ 	}
+ 
+-	efiRW, err := efivarfs.NewFilesystemReaderWriter(true)
+-	if err != nil {
+-		return nil, fmt.Errorf("failed to create efivarfs reader/writer: %w", err)
+-	}
++	if efiVariablesWritable {
++		efiRW, err := efivarfs.NewFilesystemReaderWriter(true)
++		if err != nil {
++			return nil, fmt.Errorf("failed to create efivarfs reader/writer: %w", err)
++		}
+ 
+-	defer efiRW.Close() //nolint:errcheck
++		defer efiRW.Close() //nolint:errcheck
+ 
+-	blkidInfo, err := blkid.ProbePath(opts.BootDisk, blkid.WithSkipLocking(true))
+-	if err != nil {
+-		return nil, fmt.Errorf("failed to probe block device %s: %w", opts.BootDisk, err)
+-	}
++		blkidInfo, err := blkid.ProbePath(opts.BootDisk, blkid.WithSkipLocking(true))
++		if err != nil {
++			return nil, fmt.Errorf("failed to probe block device %s: %w", opts.BootDisk, err)
++		}
+ 
+-	sdbootFilename, err := bootloaderutils.Name(opts.Arch)
+-	if err != nil {
+-		return nil, fmt.Errorf("failed to get sd-boot file path: %w", err)
+-	}
++		sdbootFilename, err := bootloaderutils.Name(opts.Arch)
++		if err != nil {
++			return nil, fmt.Errorf("failed to get sd-boot file path: %w", err)
++		}
+ 
+-	if err := CreateBootEntry(efiRW, blkidInfo, opts.Printf, sdbootFilename); err != nil {
+-		return nil, fmt.Errorf("failed to create boot entry: %w", err)
++		if err := CreateBootEntry(efiRW, blkidInfo, opts.Printf, sdbootFilename); err != nil {
++			return nil, fmt.Errorf("failed to create boot entry: %w", err)
++		}
++	} else {
++		opts.Printf("EFI runtime variables unavailable, using loader.conf")
+ 	}
+ 
+ 	if opts.ExtraInstallStep != nil {
+@@ -438,6 +437,24 @@ func (c *Config) setup(opts options.InstallOptions, ukiFileName string) (*option
+ 	}, nil
+ }
+ 
++func configureBootSelection(mountPrefix, ukiFileName string, loaderConfigFallback bool, writeVariable func(string, string) error) (bool, error) {
++	if err := writeVariable(LoaderEntryDefaultName, ukiFileName); err != nil {
++		if !loaderConfigFallback || !errors.Is(err, unix.EINVAL) {
++			return false, err
++		}
++
++		loaderConfig := fmt.Sprintf("default %s\ntimeout 5\n", ukiFileName)
++
++		return false, os.WriteFile(filepath.Join(mountPrefix, constants.EFIMountPoint, "loader", "loader.conf"), []byte(loaderConfig), 0o644)
++	}
++
++	if err := writeVariable(LoaderConfigTimeoutName, "5"); err != nil {
++		return false, err
++	}
++
++	return true, nil
++}
++
+ func (c *Config) generateAssets(opts options.InstallOptions, ukiFileName string) error {
+ 	if err := os.MkdirAll(filepath.Join(opts.MountPrefix, constants.EFIMountPoint, "loader"), 0o755); err != nil {
+ 		return err
 diff --git a/internal/app/machined/pkg/runtime/v1alpha2/v1alpha2_controller.go b/internal/app/machined/pkg/runtime/v1alpha2/v1alpha2_controller.go
 index 92e784126..a6d8b6ff1 100644
 --- a/internal/app/machined/pkg/runtime/v1alpha2/v1alpha2_controller.go
