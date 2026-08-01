@@ -1,9 +1,9 @@
 PKG_VERSION = v1.13.0
-TALOS_VERSION = v1.13.2
+TALOS_VERSION = v1.13.7
 SBCOVERLAY_VERSION = main
 
 REGISTRY ?= ghcr.io
-REGISTRY_USERNAME ?= ojsef39
+REGISTRY_USERNAME ?= lkshrk
 
 TAG ?= $(shell git describe --tags --exact-match)
 
@@ -112,6 +112,7 @@ installer:
 	cd "$(CHECKOUTS_DIRECTORY)/talos" && \
 		$(MAKE) \
 			REGISTRY=$(REGISTRY) USERNAME=$(REGISTRY_USERNAME) PUSH=true \
+			TAG=$(TALOS_VERSION) IMAGE_TAG_IN=$(TALOS_TAG) IMAGE_TAG_OUT=$(TALOS_TAG) \
 			PKG_KERNEL=$(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-kernel:$(PKGS_TAG) \
 			INSTALLER_ARCH=arm64 PLATFORM=linux/arm64 \
 			IMAGER_ARGS="--overlay-name=rpi5 --overlay-image=$(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-sbc-raspberrypi5:$(SBCOVERLAY_TAG) --system-extension-image=$(EXTENSIONS)" \
