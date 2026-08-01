@@ -1,16 +1,16 @@
-From 5b86c9182c37de91b83da62dfcb802ef1e953248 Mon Sep 17 00:00:00 2001
+From 340f70a2d671ed060ae52e96381580575e761daa Mon Sep 17 00:00:00 2001
 From: Josef Hofer <me@jhofer.de>
 Date: Sat, 14 Feb 2026 21:56:31 +0100
 Subject: [PATCH] Patched for Raspberry Pi 5
 
 ---
  Makefile                                      |  18 +--
- hack/modules-arm64.txt                        | 108 +++++++++++++++---
- .../runtime/v1alpha2/v1alpha2_controller.go   |  33 +++---
- 3 files changed, 115 insertions(+), 44 deletions(-)
+ hack/modules-arm64.txt                        | 113 ++++++++++++++----
+ .../runtime/v1alpha2/v1alpha2_controller.go   |  33 +++--
+ 3 files changed, 115 insertions(+), 49 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index ea2d55caa..bad8b85a9 100644
+index 9590b35d5..9eae00526 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -333,10 +333,10 @@ local-%: ## Builds the specified target defined in the Dockerfile using the loca
@@ -70,7 +70,7 @@ index ea2d55caa..bad8b85a9 100644
  
  .PHONY: secureboot-installer
 diff --git a/hack/modules-arm64.txt b/hack/modules-arm64.txt
-index 9888d2b0f..1b3d9395a 100644
+index 9cb2afe5d..1b3d9395a 100644
 --- a/hack/modules-arm64.txt
 +++ b/hack/modules-arm64.txt
 @@ -1,11 +1,26 @@
@@ -127,16 +127,22 @@ index 9888d2b0f..1b3d9395a 100644
  kernel/drivers/gpu/host1x/host1x.ko
  kernel/drivers/hid/hid-a4tech.ko
  kernel/drivers/hid/hid-apple.ko
-@@ -59,7 +81,7 @@ kernel/drivers/infiniband/hw/irdma/irdma.ko
+@@ -54,13 +76,12 @@ kernel/drivers/i2c/i2c-mux.ko
+ kernel/drivers/infiniband/core/ib_umad.ko
+ kernel/drivers/infiniband/core/ib_uverbs.ko
+ kernel/drivers/infiniband/core/rdma_ucm.ko
+-kernel/drivers/infiniband/hw/bnxt_re/bnxt_re.ko
+ kernel/drivers/infiniband/hw/hns/hns-roce-hw-v2.ko
+ kernel/drivers/infiniband/hw/irdma/irdma.ko
  kernel/drivers/infiniband/hw/mlx4/mlx4_ib.ko
  kernel/drivers/infiniband/hw/mlx5/mlx5_ib.ko
  kernel/drivers/infiniband/sw/rxe/rdma_rxe.ko
--kernel/drivers/irqchip/irq-bcm2712-mip.ko
+-kernel/drivers/iommu/iommufd/iommufd.ko
 +kernel/drivers/input/misc/uinput.ko
  kernel/drivers/irqchip/irq-imx-mu-msi.ko
  kernel/drivers/leds/led-class-multicolor.ko
  kernel/drivers/mailbox/bcm-flexrm-mailbox.ko
-@@ -67,13 +89,22 @@ kernel/drivers/md/bcache/bcache.ko
+@@ -68,13 +89,22 @@ kernel/drivers/md/bcache/bcache.ko
  kernel/drivers/md/dm-bio-prison.ko
  kernel/drivers/md/dm-cache-smq.ko
  kernel/drivers/md/dm-cache.ko
@@ -160,15 +166,18 @@ index 9888d2b0f..1b3d9395a 100644
  kernel/drivers/misc/hpilo.ko
  kernel/drivers/mmc/host/sdhci_f_sdh30.ko
  kernel/drivers/mmc/host/sdhci-acpi.ko
-@@ -87,7 +118,6 @@ kernel/drivers/mmc/host/sdhci-of-esdhc.ko
+@@ -88,10 +118,8 @@ kernel/drivers/mmc/host/sdhci-of-esdhc.ko
  kernel/drivers/mmc/host/sdhci-pci.ko
  kernel/drivers/mmc/host/sdhci-pltfm.ko
  kernel/drivers/mmc/host/sdhci-tegra.ko
 -kernel/drivers/mmc/host/sdhci-uhs2.ko
  kernel/drivers/mmc/host/sdhci-xenon-driver.ko
  kernel/drivers/net/ethernet/amazon/ena/ena.ko
+-kernel/drivers/net/ethernet/amd/xgbe/amd-xgbe.ko
  kernel/drivers/net/ethernet/aquantia/atlantic/atlantic.ko
-@@ -97,6 +127,11 @@ kernel/drivers/net/ethernet/broadcom/bnx2x/bnx2x.ko
+ kernel/drivers/net/ethernet/atheros/alx/alx.ko
+ kernel/drivers/net/ethernet/broadcom/bnx2.ko
+@@ -99,6 +127,11 @@ kernel/drivers/net/ethernet/broadcom/bnx2x/bnx2x.ko
  kernel/drivers/net/ethernet/broadcom/bnxt/bnxt_en.ko
  kernel/drivers/net/ethernet/broadcom/tg3.ko
  kernel/drivers/net/ethernet/cavium/common/cavium_ptp.ko
@@ -180,7 +189,7 @@ index 9888d2b0f..1b3d9395a 100644
  kernel/drivers/net/ethernet/cisco/enic/enic.ko
  kernel/drivers/net/ethernet/google/gve/gve.ko
  kernel/drivers/net/ethernet/hisilicon/hip04_eth.ko
-@@ -117,16 +152,12 @@ kernel/drivers/net/ethernet/intel/e1000e/e1000e.ko
+@@ -119,16 +152,12 @@ kernel/drivers/net/ethernet/intel/e1000e/e1000e.ko
  kernel/drivers/net/ethernet/intel/i40e/i40e.ko
  kernel/drivers/net/ethernet/intel/iavf/iavf.ko
  kernel/drivers/net/ethernet/intel/ice/ice.ko
@@ -197,7 +206,7 @@ index 9888d2b0f..1b3d9395a 100644
  kernel/drivers/net/ethernet/intel/libie/libie.ko
  kernel/drivers/net/ethernet/marvell/sky2.ko
  kernel/drivers/net/ethernet/mellanox/mlx4/mlx4_core.ko
-@@ -152,9 +183,7 @@ kernel/drivers/net/ethernet/stmicro/stmmac/dwmac-ipq806x.ko
+@@ -154,28 +183,54 @@ kernel/drivers/net/ethernet/stmicro/stmmac/dwmac-ipq806x.ko
  kernel/drivers/net/ethernet/stmicro/stmmac/dwmac-meson.ko
  kernel/drivers/net/ethernet/stmicro/stmmac/dwmac-meson8b.ko
  kernel/drivers/net/ethernet/stmicro/stmmac/dwmac-qcom-ethqos.ko
@@ -207,15 +216,18 @@ index 9888d2b0f..1b3d9395a 100644
  kernel/drivers/net/ethernet/stmicro/stmmac/dwmac-sun8i.ko
  kernel/drivers/net/ethernet/stmicro/stmmac/dwmac-sunxi.ko
  kernel/drivers/net/ethernet/stmicro/stmmac/dwmac-tegra.ko
-@@ -162,15 +191,46 @@ kernel/drivers/net/ethernet/stmicro/stmmac/stmmac-pci.ko
+ kernel/drivers/net/ethernet/stmicro/stmmac/stmmac-pci.ko
  kernel/drivers/net/ethernet/stmicro/stmmac/stmmac-platform.ko
  kernel/drivers/net/ethernet/stmicro/stmmac/stmmac.ko
+-kernel/drivers/net/ifb.ko
  kernel/drivers/net/mdio.ko
+-kernel/drivers/net/mdio/mdio-i2c.ko
 +kernel/drivers/net/mdio/mdio-mux-meson-gxl.ko
  kernel/drivers/net/pcs/pcs_xpcs.ko
 -kernel/drivers/net/pcs/pcs-rzn1-miic.ko
 +kernel/drivers/net/phy/ax88796b.ko
  kernel/drivers/net/phy/dp83867.ko
+-kernel/drivers/net/phy/sfp.ko
 +kernel/drivers/net/thunderbolt/thunderbolt_net.ko
 +kernel/drivers/net/usb/aqc111.ko
 +kernel/drivers/net/usb/asix.ko
@@ -256,7 +268,7 @@ index 9888d2b0f..1b3d9395a 100644
  kernel/drivers/nvme/target/nvme-loop.ko
  kernel/drivers/nvme/target/nvmet-fc.ko
  kernel/drivers/nvme/target/nvmet-rdma.ko
-@@ -200,12 +260,16 @@ kernel/drivers/scsi/mpt3sas/mpt3sas.ko
+@@ -205,12 +260,16 @@ kernel/drivers/scsi/mpt3sas/mpt3sas.ko
  kernel/drivers/scsi/qedf/qedf.ko
  kernel/drivers/scsi/qla2xxx/qla2xxx.ko
  kernel/drivers/scsi/smartpqi/smartpqi.ko
@@ -273,7 +285,7 @@ index 9888d2b0f..1b3d9395a 100644
  kernel/drivers/vdpa/mlx5/mlx5_vdpa.ko
  kernel/drivers/vdpa/octeon_ep/octep_vdpa.ko
  kernel/drivers/vdpa/solidrun/snet_vdpa.ko
-@@ -229,13 +293,23 @@ kernel/drivers/virtio/virtio_pci_modern_dev.ko
+@@ -234,13 +293,23 @@ kernel/drivers/virtio/virtio_pci_modern_dev.ko
  kernel/drivers/virtio/virtio_pci.ko
  kernel/drivers/virtio/virtio_vdpa.ko
  kernel/drivers/watchdog/sbsa_gwdt.ko
@@ -349,5 +361,5 @@ index 92e784126..a6d8b6ff1 100644
  
  	if err := etcRoot.OpenFS(); err != nil {
 -- 
-2.53.0
+2.50.1 (Apple Git-155)
 
