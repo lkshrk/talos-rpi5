@@ -3,9 +3,6 @@
   "extends": [
     "config:recommended"
   ],
-  "reviewers": [
-    "ojsef39"
-  ],
   "customManagers": [
     {
       "customType": "regex",
@@ -34,15 +31,38 @@
   ],
   "packageRules": [
     {
-      "description": "Group and automerge talos updates",
+      "description": "Talos patch releases: automerge, build + release follows on main",
       "matchPackageNames": [
-        "siderolabs/pkgs",
         "siderolabs/talos"
       ],
-      "groupName": "talos",
+      "matchUpdateTypes": [
+        "patch"
+      ],
       "automerge": true,
       "automergeType": "pr",
       "automergeStrategy": "squash"
+    },
+    {
+      "description": "Talos minor/major: PR for review, bump PKG_VERSION by hand in the same PR",
+      "matchPackageNames": [
+        "siderolabs/talos"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "major"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "pkgs must match the Talos minor (v1.13.x builds on pkgs v1.13.0-*); never bump independently",
+      "matchPackageNames": [
+        "siderolabs/pkgs"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "major"
+      ],
+      "enabled": false
     }
   ]
 }
