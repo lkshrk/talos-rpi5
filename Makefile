@@ -1,145 +1,78 @@
-PKG_VERSION = v1.13.0
-TALOS_VERSION = v1.13.9
-SBCOVERLAY_VERSION = main
+TALOS_VERSION = v1.14.1
+SBCOVERLAY_VERSION = 7d04484be2beb4b1fca56538d2b6d07e7d58681f
 
 REGISTRY ?= ghcr.io
 REGISTRY_USERNAME ?= lkshrk
-
-TAG ?= $(shell git describe --tags --exact-match)
-
+TAG ?= $(TALOS_VERSION)
+# Retain the existing runtime extension; override EXTENSIONS= for no extensions.
 EXTENSIONS ?= ghcr.io/siderolabs/gvisor:20250505.0@sha256:d7503b59603f030b972ceb29e5e86979e6c889be1596e87642291fee48ce380c
 
-PKG_REPOSITORY = https://github.com/siderolabs/pkgs.git
 TALOS_REPOSITORY = https://github.com/siderolabs/talos.git
 SBCOVERLAY_REPOSITORY = https://github.com/talos-rpi5/sbc-raspberrypi5.git
+CHECKOUTS_DIRECTORY := $(CURDIR)/checkouts
+PATCHES_DIRECTORY := $(CURDIR)/patches
+ARTIFACTS := $(CURDIR)/_out
+# The overlay DTBs must match Talos's stock kernel, not an independently bumped pkgs tag.
+PKGS = $(shell sed -n 's/^PKGS ?= //p' "$(CHECKOUTS_DIRECTORY)/talos/Makefile")
+INSTALLER_IMAGE = $(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-installer:$(TAG)
+IMAGER = ghcr.io/siderolabs/imager:$(TALOS_VERSION)
 
-CHECKOUTS_DIRECTORY := $(PWD)/checkouts
-PATCHES_DIRECTORY := $(PWD)/patches
-
-PKGS_TAG = $(shell cd $(CHECKOUTS_DIRECTORY)/pkgs && git describe --tag --always --dirty --match v[0-9]\*)
-TALOS_TAG = $(shell cd $(CHECKOUTS_DIRECTORY)/talos && git describe --tag --always --dirty --match v[0-9]\*)
-SBCOVERLAY_TAG = $(shell cd $(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5 && git describe --tag --always --dirty)-$(PKGS_TAG)
-
-#
-# Help
-#
-.PHONY: help
+.PHONY: help checkouts patches test overlay installer verify release clean
 help:
-	@echo "checkouts : Clone repositories required for the build"
-	@echo "patches   : Apply all patches"
-	@echo "kernel    : Build kernel"
-	@echo "overlay   : Build Raspberry Pi 5 overlay"
-	@echo "installer : Build installer docker image and disk image"
-	@echo "release   : Use only when building the final release, this will tag relevant images with the current Git tag."
-	@echo "clean     : Clean up any remains"
+	@echo "checkouts : Fetch pinned Talos and Pi boot overlay sources"
+	@echo "patches   : Apply only the NVRAM-less boot-selection fix"
+	@echo "test      : Run the focused Linux boot-selection regression tests"
+	@echo "overlay   : Build the existing Pi U-Boot overlay with stock kernel DTBs"
+	@echo "installer : Build local installer/raw artifacts; does not publish"
+	@echo "verify    : Check installer architecture/version and required Pi boot assets"
+	@echo "release   : Publish the installer artifact as $(INSTALLER_IMAGE)"
+	@echo "clean     : Remove generated checkouts and artifacts"
 
-
-
-#
-# Checkouts
-#
-.PHONY: checkouts checkouts-clean
 checkouts:
-	git clone -c advice.detachedHead=false --branch "$(PKG_VERSION)" "$(PKG_REPOSITORY)" "$(CHECKOUTS_DIRECTORY)/pkgs"
-	git clone -c advice.detachedHead=false --branch "$(TALOS_VERSION)" "$(TALOS_REPOSITORY)" "$(CHECKOUTS_DIRECTORY)/talos"
-	git clone -c advice.detachedHead=false --branch "$(SBCOVERLAY_VERSION)" "$(SBCOVERLAY_REPOSITORY)" "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5"
+	git clone -c advice.detachedHead=false --depth 1 --branch "$(TALOS_VERSION)" "$(TALOS_REPOSITORY)" "$(CHECKOUTS_DIRECTORY)/talos"
+	git clone --no-checkout "$(SBCOVERLAY_REPOSITORY)" "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5"
+	git -C "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5" checkout --detach "$(SBCOVERLAY_VERSION)"
 
-checkouts-clean:
-	rm -rf "$(CHECKOUTS_DIRECTORY)/pkgs"
-	rm -rf "$(CHECKOUTS_DIRECTORY)/talos"
-	rm -rf "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5"
+patches:
+	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply --check "$(PATCHES_DIRECTORY)/siderolabs/talos/0001-rpi5-loader-conf-fallback.patch"
+	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply "$(PATCHES_DIRECTORY)/siderolabs/talos/0001-rpi5-loader-conf-fallback.patch"
 
+test:
+	docker run --rm --platform linux/arm64 --cpus=2 --memory=2g \
+		-v "$(CHECKOUTS_DIRECTORY)/talos:/src" -w /src \
+		-v talos-rpi5-go-mod:/go/pkg/mod -v talos-rpi5-go-build:/root/.cache/go-build \
+		-e GOMAXPROCS=2 golang:1.26.5 \
+		go test -p 1 ./internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot
 
-
-#
-# Patches
-#
-.PHONY: patches-pkgs patches-talos patches-sbc patches
-patches-pkgs:
-	cd "$(CHECKOUTS_DIRECTORY)/pkgs" && \
-		git checkout -b build && \
-		git am "$(PATCHES_DIRECTORY)/siderolabs/pkgs/0001-Patched-for-Raspberry-Pi-5.patch"
-
-patches-talos:
-	cd "$(CHECKOUTS_DIRECTORY)/talos" && \
-		git checkout -b build && \
-		git am "$(PATCHES_DIRECTORY)/siderolabs/talos/0001-Patched-for-Raspberry-Pi-5.patch"
-
-patches-sbc:
-	cd "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5" && \
-		git checkout -b build && \
-		git am "$(PATCHES_DIRECTORY)/talos-rpi5/sbc-raspberrypi5/0001-Add-IMG_PREFIX-support-for-custom-image-naming.patch"
-
-patches: patches-pkgs patches-talos patches-sbc
-
-
-
-#
-# Kernel
-#
-.PHONY: kernel
-kernel:
-	cd "$(CHECKOUTS_DIRECTORY)/pkgs" && \
-		$(MAKE) \
-			REGISTRY=$(REGISTRY) USERNAME=$(REGISTRY_USERNAME) PUSH=true \
-			PKG_PREFIX=talos-rpi5- \
-			PLATFORM=linux/arm64 \
-			kernel
-
-
-
-#
-# Overlay
-#
-.PHONY: overlay
 overlay:
-	@echo SBCOVERLAY_TAG = $(SBCOVERLAY_TAG)
-	cd "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5" && \
-		$(MAKE) \
-			REGISTRY=$(REGISTRY) USERNAME=$(REGISTRY_USERNAME) IMAGE_TAG=$(SBCOVERLAY_TAG) PUSH=true \
-			IMG_PREFIX=talos-rpi5- \
-		PKGS_PREFIX=$(REGISTRY)/$(REGISTRY_USERNAME) PKGS=$(PKGS_TAG) \
-		INSTALLER_ARCH=arm64 PLATFORM=linux/arm64 \
-		sbc-raspberrypi5
+	test -n "$(PKGS)"
+	mkdir -p "$(ARTIFACTS)"
+	$(MAKE) -C "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5" target-sbc-raspberrypi5 \
+		PKGS_PREFIX=ghcr.io/siderolabs PKGS=$(PKGS) PLATFORM=linux/arm64 \
+		TARGET_ARGS="--output=type=oci,dest=$(ARTIFACTS)/overlay,tar=false"
 
-
-
-#
-# Installer/Image
-#
-.PHONY: installer
 installer:
-	cd "$(CHECKOUTS_DIRECTORY)/talos" && \
-		$(MAKE) \
-			REGISTRY=$(REGISTRY) USERNAME=$(REGISTRY_USERNAME) PUSH=true \
-			TAG=$(TALOS_VERSION) IMAGE_TAG_IN=$(TALOS_TAG) IMAGE_TAG_OUT=$(TALOS_TAG) \
-			PKG_KERNEL=$(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-kernel:$(PKGS_TAG) \
-			INSTALLER_ARCH=arm64 PLATFORM=linux/arm64 \
-			IMAGER_ARGS="--overlay-name=rpi5 --overlay-image=$(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-sbc-raspberrypi5:$(SBCOVERLAY_TAG) --system-extension-image=$(EXTENSIONS)" \
-			kernel initramfs imager installer-base installer && \
-	docker \
-		run --rm -t -v ./_out:/out -v /dev:/dev --privileged $(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-imager:$(TALOS_TAG) \
-		metal --arch arm64 \
-		--base-installer-image="$(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-installer:$(TALOS_TAG)" \
-		--overlay-name="rpi5" \
-		--overlay-image="$(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-sbc-raspberrypi5:$(SBCOVERLAY_TAG)" \
-		--system-extension-image="$(EXTENSIONS)"
+	test -f "$(ARTIFACTS)/overlay/index.json"
+	$(MAKE) -C "$(CHECKOUTS_DIRECTORY)/talos" initramfs \
+		ARTIFACTS="$(ARTIFACTS)" TAG=$(TALOS_VERSION) \
+		INSTALLER_ARCH=arm64 PLATFORM=linux/arm64 PUSH=false
+	$(MAKE) -C "$(CHECKOUTS_DIRECTORY)/talos" target-installer-base \
+		TAG=$(TALOS_VERSION) INSTALLER_ARCH=arm64 PLATFORM=linux/arm64 PUSH=false \
+		TARGET_ARGS="--output=type=oci,dest=$(ARTIFACTS)/installer-base,tar=false"
+	docker run --rm --platform linux/arm64 \
+		-v "$(ARTIFACTS):/assets:ro" -v "$(ARTIFACTS):/out" \
+		-v "$(CURDIR)/profiles:/profiles:ro" "$(IMAGER)" /profiles/installer.yaml \
+		$(foreach ext,$(EXTENSIONS),--system-extension-image=$(ext))
+	docker run --rm --platform linux/arm64 --privileged \
+		-v "$(ARTIFACTS):/assets:ro" -v "$(ARTIFACTS):/out" \
+		-v "$(CURDIR)/profiles:/profiles:ro" "$(IMAGER)" /profiles/metal.yaml \
+		$(foreach ext,$(EXTENSIONS),--system-extension-image=$(ext))
 
+verify:
+	python3 scripts/verify-artifacts.py "$(ARTIFACTS)" "$(TALOS_VERSION)"
 
+release: verify
+	crane push "$(ARTIFACTS)/installer-arm64.tar" "$(INSTALLER_IMAGE)"
 
-#
-# Release
-#
-.PHONY: release
-release:
-	docker pull $(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-installer:$(TALOS_TAG) && \
-		docker tag $(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-installer:$(TALOS_TAG) $(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-installer:$(TAG) && \
-		docker push $(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-installer:$(TAG)
-
-
-
-#
-# Clean
-#
-.PHONY: clean
-clean: checkouts-clean
+clean:
+	rm -rf "$(CHECKOUTS_DIRECTORY)" "$(ARTIFACTS)"

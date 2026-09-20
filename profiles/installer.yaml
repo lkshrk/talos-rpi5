@@ -1,0 +1,18 @@
+arch: arm64
+platform: metal
+secureboot: false
+input:
+  initramfs:
+    path: /assets/initramfs-arm64.xz
+  baseInstaller:
+    imageRef: talos-rpi5-installer:local
+    ociPath: /assets/installer-base
+  overlayInstaller:
+    ociPath: /assets/overlay
+overlay:
+  name: rpi5
+  image:
+    ociPath: /assets/overlay
+output:
+  kind: installer
+  outFormat: .tar

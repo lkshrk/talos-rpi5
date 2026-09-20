@@ -1,0 +1,318 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sun, 20 Sep 2026 12:00:00 +0200
+Subject: [PATCH] fix: preserve Pi 5 boot selection without writable EFI variables
+
+Keep installation strict. During upgrade and rollback, use loader.conf only
+when firmware rejects nonvolatile variable writes with EINVAL. Honor that
+default while probing, and preserve the booted entry through upgrade cleanup
+and asset copying until the new image has been copied successfully.
+
+diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/rpi5_test.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/rpi5_test.go
+new file mode 100644
+index 0000000..2f9bf8a
+--- /dev/null
++++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/rpi5_test.go
+@@ -0,0 +1,128 @@
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this
++// file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++package sdboot
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++	"golang.org/x/sys/unix"
++
++	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/options"
++	"github.com/siderolabs/talos/pkg/machinery/constants"
++)
++
++func TestBootSelectionFallback(t *testing.T) {
++	t.Parallel()
++
++	for _, tt := range []struct {
++		name     string
++		fallback bool
++		writeErr error
++		wantErr  error
++	}{
++		{"upgrade", true, unix.EINVAL, nil},
++		{"install", false, unix.EINVAL, unix.EINVAL},
++		{"unrelated error", true, unix.EIO, unix.EIO},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			prefix := t.TempDir()
++			require.NoError(t, os.MkdirAll(filepath.Join(prefix, constants.EFIMountPoint, "loader"), 0o755))
++			writable, err := configureBootSelection(prefix, "Talos-new.efi", tt.fallback, func(string, string) error { return tt.writeErr })
++			require.ErrorIs(t, err, tt.wantErr)
++			require.False(t, writable)
++			if tt.wantErr == nil {
++				data, err := os.ReadFile(filepath.Join(prefix, constants.EFIMountPoint, "loader", "loader.conf"))
++				require.NoError(t, err)
++				require.Equal(t, "default Talos-new.efi\ntimeout 5\n", string(data))
++			}
++		})
++	}
++}
++
++func TestBootSelectionWritableEFI(t *testing.T) {
++	t.Parallel()
++	var writes []string
++	writable, err := configureBootSelection("", "Talos-new.efi", false, func(name, value string) error {
++		writes = append(writes, name+"="+value)
++		return nil
++	})
++	require.NoError(t, err)
++	require.True(t, writable)
++	require.Equal(t, []string{"LoaderEntryDefault=Talos-new.efi", "LoaderConfigTimeout=5"}, writes)
++
++	_, err = configureBootSelection("", "Talos-new.efi", true, func(name, _ string) error {
++		if name == LoaderConfigTimeoutName {
++			return unix.EIO
++		}
++		return nil
++	})
++	require.ErrorIs(t, err, unix.EIO)
++	_, err = configureBootSelection(t.TempDir(), "Talos-new.efi", true, func(string, string) error { return unix.EINVAL })
++	require.ErrorIs(t, err, os.ErrNotExist)
++}
++
++func TestLoaderConfigDefault(t *testing.T) {
++	t.Parallel()
++	prefix := t.TempDir()
++	entry, err := bootDefault(prefix, "Talos-efi.efi")
++	require.NoError(t, err)
++	require.Equal(t, "Talos-efi.efi", entry)
++	entry, err = bootDefault(prefix, "")
++	require.NoError(t, err)
++	require.Empty(t, entry)
++	require.NoError(t, os.MkdirAll(filepath.Join(prefix, constants.EFIMountPoint, "loader"), 0o755))
++	path := filepath.Join(prefix, constants.EFIMountPoint, "loader", "loader.conf")
++	require.NoError(t, os.WriteFile(path, []byte("# comment\ndefault Talos-new.efi\ntimeout 5\n"), 0o644))
++	entry, err = bootDefault(prefix, "")
++	require.NoError(t, err)
++	require.Equal(t, "Talos-new.efi", entry)
++	entry, err = bootDefault(prefix, "Talos-efi.efi")
++	require.NoError(t, err)
++	require.Equal(t, "Talos-efi.efi", entry)
++}
++
++func TestLoaderConfigPrecleanupAndRollback(t *testing.T) {
++	t.Parallel()
++	prefix := t.TempDir()
++	require.NoError(t, os.MkdirAll(filepath.Join(prefix, constants.EFIMountPoint, "loader"), 0o755))
++	write := func(string, string) error { return unix.EINVAL }
++	// Pre-cleanup and rollback use the same selection operation as upgrade.
++	for _, entry := range []string{"Talos-old.efi", "Talos-new.efi", "Talos-old.efi"} {
++		_, err := configureBootSelection(prefix, entry, true, write)
++		require.NoError(t, err)
++		actual, err := bootDefault(prefix, "")
++		require.NoError(t, err)
++		require.Equal(t, entry, actual)
++		next, ok := findNextBootUKIFile([]string{"Talos-old.efi", "Talos-new.efi"}, actual, "Talos-old.efi")
++		require.True(t, ok)
++		require.Equal(t, entry, next)
++	}
++}
++
++func TestFailedAssetCopyPreservesBootedDefault(t *testing.T) {
++	t.Parallel()
++	prefix := t.TempDir()
++	require.NoError(t, os.MkdirAll(filepath.Join(prefix, constants.EFIMountPoint, "loader"), 0o755))
++	_, err := configureBootSelection(prefix, "Talos-old.efi", true, func(string, string) error { return unix.EINVAL })
++	require.NoError(t, err)
++	config := &Config{BootedEntry: "Talos-old.efi"}
++	err = config.copyAssets(options.InstallOptions{
++		Arch:        "arm64",
++		MountPrefix: prefix,
++		Printf:      func(string, ...any) {},
++		BootAssets:  options.BootAssets{UKIPath: filepath.Join(prefix, "missing.efi")},
++	}, "Talos-new.efi")
++	require.Error(t, err)
++	entry, err := bootDefault(prefix, "")
++	require.NoError(t, err)
++	require.Equal(t, "Talos-old.efi", entry)
++	data, err := os.ReadFile(filepath.Join(prefix, constants.EFIMountPoint, "loader", "loader.conf"))
++	require.NoError(t, err)
++	// Regenerate the normal configuration rather than freezing the old timeout.
++	require.Contains(t, string(data), string(LoaderConfBytes))
++}
+diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go
+index fa2e44e..6b4983d 100644
+--- a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go
++++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go
+@@ -141,6 +141,11 @@ func ProbeWithCallback(disk string, options options.ProbeOptions, callback func(
+ 				return err
+ 			}
+ 
++			loaderEntryDefault, err = bootDefault("", loaderEntryDefault)
++			if err != nil {
++				return err
++			}
++
+ 			options.Logf("sd-boot: LoaderEntryDefault: %s", loaderEntryDefault)
+ 
+ 			// LoaderEntrySelected is the entry selected by sd-boot for this boot. It can be
+@@ -380,7 +385,7 @@ func (c *Config) Install(opts options.InstallOptions) (*options.InstallResult, e
+ 
+ 			var err error
+ 
+-			installResult, err = c.setup(opts, ukiFileName)
++			installResult, err = c.setup(opts, ukiFileName, false)
+ 			if err != nil {
+ 				return err
+ 			}
+@@ -436,7 +441,7 @@ func (c *Config) Upgrade(opts options.InstallOptions) (*options.InstallResult, e
+ 			if !strings.EqualFold(c.NextBootEntry, c.BootedEntry) {
+ 				opts.Printf("sd-boot: pointing the default entry to the booted one for the duration of the upgrade: %s", c.BootedEntry)
+ 
+-				if err = WriteVariable(LoaderEntryDefaultName, c.BootedEntry); err != nil {
++				if _, err = configureBootSelection(opts.MountPrefix, c.BootedEntry, true, WriteVariable); err != nil {
+ 					return err
+ 				}
+ 			}
+@@ -462,7 +467,7 @@ func (c *Config) Upgrade(opts options.InstallOptions) (*options.InstallResult, e
+ 				return err
+ 			}
+ 
+-			installResult, err = c.setup(opts, ukiPath)
++			installResult, err = c.setup(opts, ukiPath, true)
+ 			if err != nil {
+ 				return err
+ 			}
+@@ -487,38 +492,37 @@ func (c *Config) Upgrade(opts options.InstallOptions) (*options.InstallResult, e
+ // Writes down the UKI and updates the EFI variables.
+ //
+ //nolint:gocyclo,cyclop
+-func (c *Config) setup(opts options.InstallOptions, ukiFileName string) (*options.InstallResult, error) {
++func (c *Config) setup(opts options.InstallOptions, ukiFileName string, loaderConfigFallback bool) (*options.InstallResult, error) {
+ 	opts.Printf("updating EFI variables")
+ 
+-	// set the new entry as a default one
+-	if err := WriteVariable(LoaderEntryDefaultName, ukiFileName); err != nil {
+-		return nil, err
+-	}
+-
+-	// set default 5 second boot timeout
+-	if err := WriteVariable(LoaderConfigTimeoutName, "5"); err != nil {
++	efiVariablesWritable, err := configureBootSelection(opts.MountPrefix, ukiFileName, loaderConfigFallback, WriteVariable)
++	if err != nil {
+ 		return nil, err
+ 	}
+ 
+-	efiRW, err := efivarfs.NewFilesystemReaderWriter(true)
+-	if err != nil {
+-		return nil, fmt.Errorf("failed to create efivarfs reader/writer: %w", err)
+-	}
++	if efiVariablesWritable {
++		efiRW, err := efivarfs.NewFilesystemReaderWriter(true)
++		if err != nil {
++			return nil, fmt.Errorf("failed to create efivarfs reader/writer: %w", err)
++		}
+ 
+-	defer efiRW.Close() //nolint:errcheck
++		defer efiRW.Close() //nolint:errcheck
+ 
+-	blkidInfo, err := blkid.ProbePath(opts.BootDisk, blkid.WithSkipLocking(true))
+-	if err != nil {
+-		return nil, fmt.Errorf("failed to probe block device %s: %w", opts.BootDisk, err)
+-	}
++		blkidInfo, err := blkid.ProbePath(opts.BootDisk, blkid.WithSkipLocking(true))
++		if err != nil {
++			return nil, fmt.Errorf("failed to probe block device %s: %w", opts.BootDisk, err)
++		}
+ 
+-	sdbootFilename, err := bootloaderutils.Name(opts.Arch)
+-	if err != nil {
+-		return nil, fmt.Errorf("failed to get sd-boot file path: %w", err)
+-	}
++		sdbootFilename, err := bootloaderutils.Name(opts.Arch)
++		if err != nil {
++			return nil, fmt.Errorf("failed to get sd-boot file path: %w", err)
++		}
+ 
+-	if err := CreateBootEntry(efiRW, blkidInfo, opts.Printf, sdbootFilename); err != nil {
+-		return nil, fmt.Errorf("failed to create boot entry: %w", err)
++		if err := CreateBootEntry(efiRW, blkidInfo, opts.Printf, sdbootFilename); err != nil {
++			return nil, fmt.Errorf("failed to create boot entry: %w", err)
++		}
++	} else {
++		opts.Printf("EFI runtime variables unavailable, using loader.conf")
+ 	}
+ 
+ 	if opts.ExtraInstallStep != nil {
+@@ -532,6 +536,46 @@ func (c *Config) setup(opts options.InstallOptions, ukiFileName string) (*option
+ 	}, nil
+ }
+ 
++// configureBootSelection preserves strict installation errors, while allowing upgrades
++// and rollback on firmware which rejects nonvolatile EFI variable writes with EINVAL.
++func configureBootSelection(mountPrefix, ukiFileName string, loaderConfigFallback bool, writeVariable func(string, string) error) (bool, error) {
++	if err := writeVariable(LoaderEntryDefaultName, ukiFileName); err != nil {
++		if !loaderConfigFallback || !errors.Is(err, unix.EINVAL) {
++			return false, err
++		}
++
++		loaderConfig := fmt.Sprintf("default %s\ntimeout 5\n", ukiFileName)
++
++		return false, os.WriteFile(filepath.Join(mountPrefix, constants.EFIMountPoint, "loader", "loader.conf"), []byte(loaderConfig), 0o644)
++	}
++
++	return true, writeVariable(LoaderConfigTimeoutName, "5")
++}
++
++// bootDefault honors EFI precedence, then the exact default written by our fallback.
++func bootDefault(mountPrefix, efiDefault string) (string, error) {
++	if efiDefault != "" {
++		return efiDefault, nil
++	}
++
++	data, err := os.ReadFile(filepath.Join(mountPrefix, constants.EFIMountPoint, "loader", "loader.conf"))
++	if errors.Is(err, os.ErrNotExist) {
++		return "", nil
++	}
++	if err != nil {
++		return "", err
++	}
++
++	for line := range strings.SplitSeq(string(data), "\n") {
++		fields := strings.Fields(line)
++		if len(fields) == 2 && fields[0] == "default" {
++			return fields[1], nil
++		}
++	}
++
++	return "", nil
++}
++
+ func (c *Config) copyAssets(opts options.InstallOptions, ukiFileName string) error {
+ 	loaderDir := filepath.Join(opts.MountPrefix, constants.EFIMountPoint, "loader")
+ 
+@@ -540,6 +584,11 @@ func (c *Config) copyAssets(opts options.InstallOptions, ukiFileName string) err
+ 	}
+ 
+ 	loaderConf := LoaderConfBytes
++	// An interrupted upgrade must still boot the old UKI when EFI variables are
++	// unavailable. Keep that default until setup selects the fully copied image.
++	if c.BootedEntry != "" {
++		loaderConf = slices.Concat(loaderConf, []byte("\ndefault "+c.BootedEntry+"\n"))
++	}
+ 
+ 	if opts.SecureBootEnrollKeys != "" {
+ 		loaderConf = slices.Concat(loaderConf, []byte("\nsecure-boot-enroll "+opts.SecureBootEnrollKeys+"\n"))
+@@ -663,7 +712,9 @@ func (c *Config) revert() error {
+ 
+ 		log.Printf("reverting to previous UKI: %s", file)
+ 
+-		return WriteVariable(LoaderEntryDefaultName, filepath.Base(file))
++		_, err := configureBootSelection("", filepath.Base(file), true, WriteVariable)
++
++		return err
+ 	}
+ 
+ 	return errors.New("previous UKI not found")

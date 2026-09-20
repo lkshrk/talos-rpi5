@@ -19,6 +19,7 @@
           buildInputs = with pkgs; [
             crane
             gnumake
+            python3
           ];
         };
       }

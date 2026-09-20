@@ -1,3 +1,4 @@
 checkouts/
+_out/
 /.direnv
 .DS_Store

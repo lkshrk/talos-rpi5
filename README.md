@@ -1,67 +1,76 @@
 # Raspberry Pi 5 Talos Builder
 
-This repository serves as the glue to build custom Talos images for the
-Raspberry Pi 5. It patches the Kernel and Talos build process to use the Linux
-Kernel source provided by
-[raspberrypi/linux](https://github.com/raspberrypi/linux).
+Build Talos 1.14.1 with the upstream kernel and only the remaining Pi boot
+customizations: the pinned U-Boot/NVMe overlay and a narrow loader.conf fallback
+when firmware rejects EFI variable writes.
 
-## Tested on
+The vendor kernel, replacement module list, old open_tree workaround, and
+image-naming source patches are no longer built or applied.
+See [COMPARISON.md](COMPARISON.md) for the comparison and hardware boundaries.
 
-So far, this release has been verified on:
+## Validation status
 
-| ✅ Hardware                                                                                  |
-| -------------------------------------------------------------------------------------------- |
-| Raspberry Pi Compute Module 5 on Compute Module 5 IO Board                                   |
-| Raspberry Pi Compute Module 5 Lite on [DeskPi Super6C](https://wiki.deskpi.com/super6c/)     |
-| Raspberry Pi 5b with [RS-P11 for RS-P22 RPi5](https://wiki.52pi.com/index.php?title=EP-0234) |
+The boot-selection regression suite runs on Linux. Installer verification checks
+architecture, version, UKI, U-Boot and the matching native Pi 5 device tree.
+These checks do not replace a physical Pi test: fresh boot, NVMe, Ethernet,
+cooling and upgrade/rollback must be verified before production use.
+The old vendor-kernel release's CM5/peripheral claims do not apply to this image.
 
-## What's not working?
+## Build locally
 
-- Booting from USB: USB is only available once LINUX has booted up but not in
-  U-Boot.
+Requires Docker Buildx, Git, GNU Make 4+ and Python 3. On macOS use `gmake`.
+Use a Linux/arm64-capable builder.
+No image is published by these commands:
 
-## How to use?
-
-The releases on this repository align with the corresponding Talos version.
-There is a raw disk image (initial setup) and an installer image (upgrades)
-provided.
-
-### Examples
-
-Initial:
-
-```
-unzstd metal-arm64-rpi.raw.zst
-dd if=metal-arm64-rpi.raw of=<disk> bs=4M status=progress
-sync
-```
-
-Upgrade:
-
-```
-talosctl upgrade \
-  --nodes <node IP> \
-  --image ghcr.io/ojsef39/talos-rpi5-installer:<version>
-```
-
-## Building
-
-If you'd like to make modifications, it is possible to create your own build.
-Bellow is an example of the standard build.
-
-```
-# Clones all dependencies and applies the necessary patches
+```sh
 make checkouts patches
-
-# Builds the Linux Kernel (can take a while)
-make REGISTRY=ghcr.io REGISTRY_USERNAME=<username> kernel
-
-# Builds the overlay (U-Boot, dtoverlays ...)
-make REGISTRY=ghcr.io REGISTRY_USERNAME=<username> overlay
-
-# Final step to build the installer and disk image
-make REGISTRY=ghcr.io REGISTRY_USERNAME=<username> installer
+make test
+make overlay
+make installer
+make verify
 ```
+
+Outputs:
+
+- `_out/installer-arm64.tar`: upgrade installer, tagged locally as
+  `talos-rpi5-installer:local`.
+- `_out/metal-arm64.raw.zst`: fresh-install disk image.
+- `_out/overlay/` and `_out/installer-base/`: local OCI inputs.
+
+The overlay device trees come from the exact stock kernel package pinned by
+Talos. The official imager combines that stock kernel with our patched Talos
+initramfs and installer binary. Only the sd-boot patch changes Talos behavior.
+
+The existing gVisor extension is retained by default. Set `EXTENSIONS=` to omit
+it, or provide compatible extension image references. It is not required for
+Pi boot, NVMe or Ethernet.
+
+## Publish and install
+
+Publishing is a separate, explicit step and requires crane plus registry access:
+
+```sh
+make release TAG=v1.14.1 REGISTRY_USERNAME=lkshrk
+```
+
+After hardware validation, the upgrade command is:
+
+```sh
+talosctl upgrade --nodes <node-ip> --reboot-mode powercycle \
+  --image ghcr.io/lkshrk/talos-rpi5-installer:v1.14.1
+```
+
+For a fresh installation, decompress `metal-arm64.raw.zst` and flash it to the
+intended boot disk. Flashing destroys that disk's existing contents.
+
+CI builds pull requests without publishing container images, and retains the
+candidate installer/raw image as workflow artifacts. The existing tagged and
+main-version-bump release flows publish only after build and verification pass.
+
+## Maintenance
+
+See [UPGRADING.md](UPGRADING.md). `make clean` deletes generated checkouts and
+artifacts, leaving source patches intact.
 
 ## License
 

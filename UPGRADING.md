@@ -1,47 +1,37 @@
-# Upgrading Talos
-When a new version of Talos is released it may be necessary to adjust the patches we are applying to the upstream repositories.
+# Updating the minimal Pi image
 
-1. Make sure you're starting from a clean slate
-```
-make clean
-```
-2. Update the versions in the _Makefile_ with the latest tag available in siderolabs repositories.
-```
-PKG_VERSION = vX.XX.X   <-- siderolabs/pkgs
-TALOS_VERSION = vX.XX.X <-- siderolabs/talos
-```
-3. Clone all checkouts
-```
-make checkouts
-```
-4. Update patches as outlined bellow
-5. Commit and push changes
-```
-git commit -am 'Talos upgrade to vX.XX.X'
-git push
-```
-7. Create new tag
-```
-git tag vX.XX.X-rpi5
-git push origin vX.XX.X-rpi5
-```
+1. Change `TALOS_VERSION` in Makefile. Review the official release notes and the
+   retained sd-boot patch against that exact version.
+2. Keep `SBCOVERLAY_VERSION` pinned. Change it only after reviewing its U-Boot,
+   firmware and installer behavior.
+3. Run `make clean`, then `make checkouts patches test`. The patch must apply
+   cleanly and its Linux tests must pass.
+4. Run `make overlay installer verify`. These produce local artifacts without
+   pushing intermediary images.
+5. Verify the candidate on a physical Pi before publishing/deploying.
 
-## Pkgs
-The [siderolabs/pkgs](https://github.com/siderolabs/pkgs) repository produces a set of packages which is used to build the rootfs. We are concerned about customizing the Kernel package, by using the the [raspberrypi/linux](https://github.com/raspberrypi/linux) kernel .
+There is no independent kernel version to bump. Makefile reads Talos's exact
+`PKGS` pin and uses its stock kernel/DTBs. Do not restore the old vendor-kernel
+module list or runtime fallback.
 
-**TBD: Will be added next time the pkgs repository is updated**
+## The remaining Talos patch
 
-## Talos
-The [siderolabs/talos](https://github.com/siderolabs/talos) repository is where packages and Talos come together. We'll need to customise the list of available kernel modules to be copied in to the initramfs.
+`patches/siderolabs/talos/0001-rpi5-loader-conf-fallback.patch` preserves boot
+selection on the existing firmware when EFI writes fail with `EINVAL`.
+Installation still fails on that error; upgrade and rollback may use
+`loader.conf`. Unrelated errors must propagate.
 
-1. Try to apply the patches. If there are errors proceed to step 2, if not no further changes are needed.
-```
-make patches-pkgs
-```
-2. Manually add the required changes, commit and regenerate the patch. Essentially the _hack/modules-arm64.txt_ file needs to be overwritten with the one appropriate for the kernel build.
-```
-cd cd checkouts/talos
-cp <updated modules-arm64.txt> hack/modules-arm64.txt
-git commit -am '[PATCH] Patched for Raspberry Pi 5'
-git format-patch --output-directory "../../patches/siderolabs/talos" HEAD~1
-```
+When rebasing, examine all default-entry writers, pre-upgrade UKI cleanup,
+probing and rollback. EFI values retain precedence. Tests cover the fallback,
+strict installation, error propagation and old/new/old selection sequence.
+Normal firmware reboot is required; do not assume NVRAM-less kexec behavior.
+
+Remove the patch only when upstream covers these behaviors and the same
+regression checks pass without it. Update COMPARISON.md with the evidence.
+
+## Release behavior
+
+Pull-request builds never publish registry images. A version-changing merge to
+main retains the existing automatic tag/release behavior; tag pushes also
+release. Publishing uses the already-verified installer archive, not a rebuild.
+Keep the version in the tag aligned with `TALOS_VERSION`.
