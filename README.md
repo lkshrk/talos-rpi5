@@ -4,9 +4,11 @@ Build Talos 1.14.1 with the upstream kernel, a corrected Pi U-Boot/NVMe overlay,
 and a narrow loader.conf fallback when firmware rejects EFI variable writes.
 The original `v1.14.1` image was withdrawn after a failed Pi upgrade. The repair
 candidate is `v1.14.1-rpi5.3`; it does not overwrite earlier package tags.
-Revisions 1 and 2 hang at the Talos splash on D0-stepping boards (Pi 5 Rev 1.1):
-the firmware loads the mainline `bcm2712-rpi-5-b.dtb` and cannot apply its vendor
-`bcm2712d0.dtbo` to it, so the kernel panics with an SError before any console.
+Revisions 1 and 2 hang at the Talos splash on a D0-stepping board (Pi 5 Rev 1.1)
+and leave no kernel log. The suspected mechanism, captured on identical hardware
+in siderolabs/talos#12748 but not on this Pi: the firmware loads the mainline
+`bcm2712-rpi-5-b.dtb`, cannot apply its vendor `bcm2712d0.dtbo`, and the kernel
+panics with an SError before any console.
 Revision 3 appends `device_tree=bcm2712-d-rpi-5-b.dtb` to config.txt; it targets
 D0 boards only and must not be installed on C0/C1-stepping Pi 5 hardware.
 Revision 1's raw disk image also omitted the Pi boot overlay; do not flash it.

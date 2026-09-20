@@ -25,14 +25,16 @@ separate gate; the repair is published under a new package tag.
 ## D0 device-tree selection repair (revision 3)
 
 Revision 2 also failed to return after a Pi 5 Rev 1.1 (BCM2712 D0) upgrade.
-Recovered NVMe logs contain no 6.18.51 boot from that attempt, so the kernel died
-before machined started. The firmware on that board loads `bcm2712-rpi-5-b.dtb`
-and applies `overlays/bcm2712d0.dtbo`; the vendor overlay needs labels such as
-`spi10` that the mainline tree lacks, so the overlay is skipped and the kernel
-runs a C0 layout on D0 silicon. Mainline then panics early with an asynchronous
-SError in `brcmstb_pinconf_set` (siderolabs/talos#12748 shows the identical
-firmware log and panic on Rev 1.1 hardware). The legacy `bcm2712d0-rpi-5-b.dtb`
-alias from revision 1 is never selected by that firmware.
+Recovered NVMe logs contain no 6.18.51 boot from that attempt, so the kernel did
+not reach machined. No console or serial capture exists from this Pi, so the
+failure path below is the suspected mechanism, not observed evidence. It was
+captured on identical Rev 1.1 hardware with the official mainline-DTB overlay in
+siderolabs/talos#12748: the firmware loads `bcm2712-rpi-5-b.dtb` and applies
+`overlays/bcm2712d0.dtbo`; the vendor overlay needs labels such as `spi10` that
+the mainline tree lacks, so the overlay is skipped, the kernel runs a C0 layout
+on D0 silicon and panics early with an asynchronous SError in
+`brcmstb_pinconf_set`. The legacy `bcm2712d0-rpi-5-b.dtb` alias from revision 1
+was present during this Pi's failed boot and did not change the outcome.
 
 Mainline expects D0 boards to boot `bcm2712-d-rpi-5-b.dtb`. Revision 3 passes
 `configTxtAppend: device_tree=bcm2712-d-rpi-5-b.dtb` as an overlay option in both
