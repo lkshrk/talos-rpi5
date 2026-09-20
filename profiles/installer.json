@@ -8,5 +8,5 @@
     "overlayInstaller": {"ociPath": "/assets/overlay"}
   },
   "overlay": {"name": "rpi5", "image": {"ociPath": "/assets/overlay"}},
-  "output": {"kind": "installer", "outFormat": ".tar"}
+  "output": {"kind": "installer", "outFormat": "raw"}
 }
