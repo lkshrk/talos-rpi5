@@ -7,6 +7,6 @@
     "baseInstaller": {"imageRef": "talos-rpi5-installer:local", "ociPath": "/assets/installer-base"},
     "overlayInstaller": {"ociPath": "/assets/overlay"}
   },
-  "overlay": {"name": "rpi5", "image": {"ociPath": "/assets/overlay"}},
+  "overlay": {"name": "rpi5", "image": {"ociPath": "/assets/overlay"}, "options": {"configTxtAppend": "device_tree=bcm2712-d-rpi-5-b.dtb"}},
   "output": {"kind": "installer", "outFormat": "raw"}
 }

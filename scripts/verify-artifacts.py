@@ -17,6 +17,7 @@ with tarfile.open(directory / "installer-arm64.tar") as archive:
     assert config["config"]["Entrypoint"] == ["/bin/installer"]
     files = set()
     boot_files = {}
+    extra_options = b""
     for layer in manifest[0]["Layers"]:
         with tarfile.open(fileobj=archive.extractfile(layer), mode="r|*") as contents:
             for member in contents:
@@ -26,14 +27,18 @@ with tarfile.open(directory / "installer-arm64.tar") as archive:
                 files.add(name)
                 if name.startswith("overlay/artifacts/arm64/") and name.endswith((".dtb", "u-boot.bin")):
                     boot_files[name] = contents.extractfile(member).read()
+                if name == "overlay/extra-options":
+                    extra_options = contents.extractfile(member).read()
     required = {
         "usr/install/arm64/vmlinuz.efi",
         "usr/install/arm64/systemd-boot.efi",
         "overlay/installers/default",
+        "overlay/extra-options",
         "overlay/artifacts/arm64/u-boot/rpi5/u-boot.bin",
         "overlay/artifacts/arm64/firmware/boot/bcm2712-rpi-5-b.dtb",
     }
     assert required <= files, f"missing boot artifacts: {sorted(required - files)}"
+    assert b"configTxtAppend: device_tree=bcm2712-d-rpi-5-b.dtb" in extra_options, "installer must append the D0 device_tree selection"
 runpy.run_path(str(Path(__file__).with_name("verify-boot-assets.py")))["verify_boot_assets"](boot_files)
 runpy.run_path(str(Path(__file__).resolve().parents[1] / "tests/boot-assets.py"))["test_boot_assets"](boot_files)
 raw = directory / "metal-arm64.raw.zst"

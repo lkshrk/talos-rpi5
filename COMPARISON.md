@@ -22,6 +22,27 @@ plus byte equality of the D0 aliases. These replace the previous insufficient
 file-presence-only boot checks. Hardware recovery/boot verification is still a
 separate gate; the repair is published under a new package tag.
 
+## D0 device-tree selection repair (revision 3)
+
+Revision 2 also failed to return after a Pi 5 Rev 1.1 (BCM2712 D0) upgrade.
+Recovered NVMe logs contain no 6.18.51 boot from that attempt, so the kernel died
+before machined started. The firmware on that board loads `bcm2712-rpi-5-b.dtb`
+and applies `overlays/bcm2712d0.dtbo`; the vendor overlay needs labels such as
+`spi10` that the mainline tree lacks, so the overlay is skipped and the kernel
+runs a C0 layout on D0 silicon. Mainline then panics early with an asynchronous
+SError in `brcmstb_pinconf_set` (siderolabs/talos#12748 shows the identical
+firmware log and panic on Rev 1.1 hardware). The legacy `bcm2712d0-rpi-5-b.dtb`
+alias from revision 1 is never selected by that firmware.
+
+Mainline expects D0 boards to boot `bcm2712-d-rpi-5-b.dtb`. Revision 3 passes
+`configTxtAppend: device_tree=bcm2712-d-rpi-5-b.dtb` as an overlay option in both
+imager profiles, so installs, upgrades and the raw image write it to config.txt.
+That tree carries `__symbols__` and `clk_rp1_xosc`, which the stock kernel's RP1
+runtime overlay needs for Ethernet; a diagnostic boot on the vendor D0 tree
+reached userspace but failed exactly there. The selection is board-specific:
+C0/C1 boards need the base tree and must not use this revision. Verification
+checks the installer's `overlay/extra-options` and the raw image's config.txt.
+
 ## Raw-image packaging repair (revision 2)
 
 Inspection of the generated raw EFI partition found only the EFI loader, UKI
@@ -35,7 +56,7 @@ A regression test requires a callback-created file in the final EFI source
 directory and rejects a failed callback. Build the imager from patched source,
 load it locally, and use it for both outputs. Verify the raw artifact itself
 with a read-only Linux loop mount and the existing U-Boot/DTB checker, plus
-config.txt and EFI boot files. Publish only as a new `v1.14.1-rpi5.2` package.
+config.txt and EFI boot files. Published as `v1.14.1-rpi5.2`.
 Hardware boot remains a separate gate. No existing disks are modified by the
 verification command; it attaches only the decompressed build artifact.
 

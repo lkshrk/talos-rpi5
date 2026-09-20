@@ -11,6 +11,7 @@ def verify_raw_efi(root):
     verifier["verify_boot_assets"](files)
     config = {line.strip() for line in (root / "config.txt").read_text().splitlines()}
     assert "kernel=u-boot.bin" in config and "arm_64bit=1" in config, "missing Pi boot configuration"
+    assert "device_tree=bcm2712-d-rpi-5-b.dtb" in config, "firmware must load the stock D0 device tree"
     assert (root / "EFI/boot/BOOTAA64.efi").stat().st_size > 0, "missing ARM64 EFI loader"
     assert any(path.stat().st_size > 0 for path in (root / "EFI/Linux").glob("Talos-*.efi")), "missing Talos UKI"
     assert (root / "loader/loader.conf").stat().st_size > 0, "missing loader configuration"
