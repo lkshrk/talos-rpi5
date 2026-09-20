@@ -8,11 +8,19 @@ on:
       - main
     paths:
       - "Makefile"
+      - "patches/**"
+      - "profiles/**"
+      - "scripts/**"
+      - ".github/workflows/build.yaml"
   pull_request:
     branches:
       - main
     paths:
       - "Makefile"
+      - "patches/**"
+      - "profiles/**"
+      - "scripts/**"
+      - ".github/workflows/build.yaml"
 
 jobs:
   check-version:
@@ -30,39 +38,26 @@ jobs:
       - name: Check if build should run
         id: check
         run: |
-          # PR build: always build, never release
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            VERSION=$(grep "^TALOS_VERSION = " Makefile | cut -d' ' -f3)
-            echo "should_build=true" >> $GITHUB_OUTPUT
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "is_tag=false" >> $GITHUB_OUTPUT
-            echo "is_pr=true" >> $GITHUB_OUTPUT
-            echo "PR build detected, version: $VERSION"
-            exit 0
+          VERSION=$(awk '/^TALOS_VERSION = / {print $3}' Makefile)
+          should_build=false
+          is_tag=false
+          is_pr=false
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            should_build=true
+            is_pr=true
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            should_build=true
+            is_tag=true
+            VERSION=${GITHUB_REF#refs/tags/}
+          elif git diff HEAD~1 HEAD -- Makefile | grep -q '^+TALOS_VERSION = '; then
+            should_build=true
           fi
-
-          # If triggered by a tag, always build
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "should_build=true" >> $GITHUB_OUTPUT
-            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-            echo "is_tag=true" >> $GITHUB_OUTPUT
-            echo "is_pr=false" >> $GITHUB_OUTPUT
-            echo "Tag push detected: ${GITHUB_REF#refs/tags/}"
-            exit 0
-          fi
-
-          # If triggered by push to main, check if TALOS_VERSION changed
-          if git diff HEAD~1 HEAD -- Makefile | grep -q "^+TALOS_VERSION = "; then
-            VERSION=$(grep "^TALOS_VERSION = " Makefile | cut -d' ' -f3)
-            echo "should_build=true" >> $GITHUB_OUTPUT
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "is_tag=false" >> $GITHUB_OUTPUT
-            echo "is_pr=false" >> $GITHUB_OUTPUT
-            echo "TALOS_VERSION changed to $VERSION"
-          else
-            echo "should_build=false" >> $GITHUB_OUTPUT
-            echo "No TALOS_VERSION change detected"
-          fi
+          {
+            echo "should_build=$should_build"
+            echo "version=$VERSION"
+            echo "is_tag=$is_tag"
+            echo "is_pr=$is_pr"
+          } >> "$GITHUB_OUTPUT"
 
   build:
     needs: check-version
@@ -90,14 +85,28 @@ jobs:
       - name: Prepare (checkouts & patches)
         run: make checkouts patches
 
-      - name: Kernel
-        run: make kernel
+      - name: Boot-selection regression tests
+        run: make test
 
       - name: Overlay
         run: make overlay
 
       - name: Installer
         run: make installer
+
+      - name: Verify artifacts
+        run: make verify
+
+      - name: Preserve candidate artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: talos-rpi5-${{ needs.check-version.outputs.version }}
+          path: |
+            _out/installer-arm64.tar
+            _out/metal-arm64.raw.zst
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
 
       - name: Create tag (if auto-release)
         if: needs.check-version.outputs.is_tag == 'false' && needs.check-version.outputs.is_pr != 'true'
@@ -112,16 +121,7 @@ jobs:
         env:
           VERSION: ${{ needs.check-version.outputs.version }}
         run: |
-          # For tag-based releases, use make release
-          if [[ "${{ needs.check-version.outputs.is_tag }}" == "true" ]]; then
-            make release
-          else
-            # For auto-releases, manually tag and push the installer image
-            TALOS_TAG=$(cd checkouts/talos && git describe --tag --always --dirty --match v[0-9]\*)
-            docker pull ghcr.io/${{ github.repository_owner }}/talos-rpi5-installer:${TALOS_TAG}
-            docker tag ghcr.io/${{ github.repository_owner }}/talos-rpi5-installer:${TALOS_TAG} ghcr.io/${{ github.repository_owner }}/talos-rpi5-installer:${VERSION}
-            docker push ghcr.io/${{ github.repository_owner }}/talos-rpi5-installer:${VERSION}
-          fi
+          make release TAG="$VERSION" REGISTRY_USERNAME="${{ github.repository_owner }}"
 
       - name: Create GitHub Release
         if: needs.check-version.outputs.is_pr != 'true'
@@ -132,7 +132,7 @@ jobs:
           NOTES=$(cat <<EOF
           > ⚠️ Experimental build, use at your own risk.
 
-          This is a patched version of Talos tailored for the Raspberry Pi 5, including NVMe, NIC and USB support.
+          Talos with its upstream kernel, the retained Pi 5 boot overlay, and an EFI-variable fallback for upgrades. See COMPARISON.md for hardware validation limits.
 
           ### What's available
 
@@ -153,7 +153,7 @@ jobs:
           EOF
           )
           gh release create \
-            ${VERSION} \
-            ./checkouts/talos/_out/metal-arm64.raw.zst \
+            "${VERSION}" \
+            ./_out/metal-arm64.raw.zst \
             --title "${VERSION}" \
             --notes "$NOTES"

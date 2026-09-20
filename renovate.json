@@ -10,18 +10,6 @@
         "/^Makefile$/"
       ],
       "matchStrings": [
-        "PKG_VERSION = (?<currentValue>.*?)\\n"
-      ],
-      "datasourceTemplate": "github-tags",
-      "depNameTemplate": "siderolabs/pkgs",
-      "versioningTemplate": "semver"
-    },
-    {
-      "customType": "regex",
-      "managerFilePatterns": [
-        "/^Makefile$/"
-      ],
-      "matchStrings": [
         "TALOS_VERSION = (?<currentValue>.*?)\\n"
       ],
       "datasourceTemplate": "github-tags",
@@ -43,7 +31,7 @@
       "automergeStrategy": "squash"
     },
     {
-      "description": "Talos minor/major: PR for review, bump PKG_VERSION by hand in the same PR",
+      "description": "Talos minor/major: review the retained boot patch and pinned overlay before release",
       "matchPackageNames": [
         "siderolabs/talos"
       ],
@@ -52,17 +40,6 @@
         "major"
       ],
       "automerge": false
-    },
-    {
-      "description": "pkgs must match the Talos minor (v1.13.x builds on pkgs v1.13.0-*); never bump independently",
-      "matchPackageNames": [
-        "siderolabs/pkgs"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "major"
-      ],
-      "enabled": false
     }
   ]
 }
