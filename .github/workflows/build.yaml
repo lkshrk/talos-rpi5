@@ -93,7 +93,24 @@ jobs:
         run: make checkouts patches
 
       - name: Boot compatibility regression tests
-        run: make test
+        run: |
+          overlay_patch="$PWD/patches/siderolabs/talos/0002-image-overlay-assets.patch"
+          source_path=internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go
+          restore_overlay_fix() {
+            git -C checkouts/talos apply --include="$source_path" "$overlay_patch"
+          }
+          git -C checkouts/talos apply --reverse --include="$source_path" "$overlay_patch"
+          trap restore_overlay_fix EXIT
+          if make test > /tmp/rpi-overlay-regression.log 2>&1; then
+            echo "Regression unexpectedly passed without the overlay fix" >&2
+            exit 1
+          fi
+          cat /tmp/rpi-overlay-regression.log
+          grep -F 'expected: 1' /tmp/rpi-overlay-regression.log
+          grep -F 'actual  : 0' /tmp/rpi-overlay-regression.log
+          restore_overlay_fix
+          trap - EXIT
+          make test
 
       - name: Overlay
         run: make overlay
@@ -102,7 +119,10 @@ jobs:
         run: make installer
 
       - name: Verify artifacts
-        run: make verify
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd
+          make verify
 
       - name: Preserve candidate artifacts
         uses: actions/upload-artifact@v7
@@ -139,7 +159,7 @@ jobs:
           NOTES=$(cat <<EOF
           > ⚠️ Experimental build, use at your own risk.
 
-          Talos with its upstream kernel, corrected U-Boot NVMe mappings, matching D0 device-tree aliases, and an EFI-variable fallback for upgrades. This image revision replaces the withdrawn v1.14.1 package. See COMPARISON.md for hardware validation limits.
+          Talos with its upstream kernel, corrected U-Boot NVMe mappings, matching D0 device-tree aliases, and an EFI-variable fallback for upgrades. Revision 2 also restores the missing Pi boot assets in the raw disk image and verifies its actual EFI partition. See COMPARISON.md for hardware validation limits.
 
           ### What's available
 

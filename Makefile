@@ -1,5 +1,5 @@
 TALOS_VERSION = v1.14.1
-IMAGE_REVISION = 1
+IMAGE_REVISION = 2
 SBCOVERLAY_VERSION = 7d04484be2beb4b1fca56538d2b6d07e7d58681f
 
 REGISTRY ?= ghcr.io
@@ -16,7 +16,7 @@ ARTIFACTS := $(CURDIR)/_out
 # The overlay DTBs must match Talos's stock kernel, not an independently bumped pkgs tag.
 PKGS = $(shell sed -n 's/^PKGS ?= //p' "$(CHECKOUTS_DIRECTORY)/talos/Makefile")
 INSTALLER_IMAGE = $(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-installer:$(TAG)
-IMAGER = ghcr.io/siderolabs/imager:$(TALOS_VERSION)
+IMAGER = talos-rpi5-imager:$(TAG)
 
 .PHONY: help image-version checkouts patches test overlay installer verify release clean
 help:
@@ -40,6 +40,8 @@ checkouts:
 patches:
 	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply --check "$(PATCHES_DIRECTORY)/siderolabs/talos/0001-rpi5-loader-conf-fallback.patch"
 	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply "$(PATCHES_DIRECTORY)/siderolabs/talos/0001-rpi5-loader-conf-fallback.patch"
+	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply --check "$(PATCHES_DIRECTORY)/siderolabs/talos/0002-image-overlay-assets.patch"
+	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply "$(PATCHES_DIRECTORY)/siderolabs/talos/0002-image-overlay-assets.patch"
 	cd "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5" && git apply --check "$(PATCHES_DIRECTORY)/talos-rpi5/sbc-raspberrypi5/0001-mainline-pi5-boot-compatibility.patch"
 	cd "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5" && git apply "$(PATCHES_DIRECTORY)/talos-rpi5/sbc-raspberrypi5/0001-mainline-pi5-boot-compatibility.patch"
 
@@ -65,6 +67,9 @@ installer:
 	$(MAKE) -C "$(CHECKOUTS_DIRECTORY)/talos" target-installer-base \
 		TAG=$(TALOS_VERSION) INSTALLER_ARCH=arm64 PLATFORM=linux/arm64 PUSH=false \
 		TARGET_ARGS="--output=type=oci,dest=$(ARTIFACTS)/installer-base,tar=false"
+	$(MAKE) -C "$(CHECKOUTS_DIRECTORY)/talos" target-imager \
+		TAG=$(TALOS_VERSION) INSTALLER_ARCH=arm64 PLATFORM=linux/arm64 PUSH=false \
+		TARGET_ARGS="--load --tag=$(IMAGER)"
 	python3 scripts/render-profile.py profiles/installer.json $(EXTENSIONS) | \
 	docker run --rm -i --platform linux/arm64 \
 		-v "$(ARTIFACTS):/assets:ro" -v "$(ARTIFACTS):/out" \
@@ -76,6 +81,7 @@ installer:
 
 verify:
 	python3 scripts/verify-artifacts.py "$(ARTIFACTS)" "$(TALOS_VERSION)"
+	bash scripts/verify-raw-image.sh "$(ARTIFACTS)/metal-arm64.raw.zst"
 
 release: verify
 	crane push "$(ARTIFACTS)/installer-arm64.tar" "$(INSTALLER_IMAGE)"

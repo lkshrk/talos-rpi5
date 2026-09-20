@@ -1,0 +1,79 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] sdboot: install overlay assets in raw image mode
+
+Prepare the overlay before relocating the EFI source directory, matching
+non-image install behavior. Propagate overlay errors instead of emitting an
+incomplete image. Regression checks cover the installed marker and errors.
+
+diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go
+index 6b4983d..39c560a 100644
+--- a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go
++++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/sdboot.go
+@@ -344,6 +344,13 @@ func (c *Config) PrepareBootPartitions(opts options.InstallOptions) ([]partition
+ 		return nil, err
+ 	}
+ 
++	// Install overlay assets while the original EFI mount path still exists.
++	if opts.ExtraInstallStep != nil {
++		if err := opts.ExtraInstallStep(); err != nil {
++			return nil, err
++		}
++	}
++
+ 	// move the files out of constants.EFIMountPoint into the "EFI" directory to prevent it being pulled into the GRUB /boot partition in dual-boot mode
+ 	if err := os.Rename(filepath.Join(opts.MountPrefix, constants.EFIMountPoint), filepath.Join(opts.MountPrefix, "EFI")); err != nil {
+ 		return nil, fmt.Errorf("failed to move EFI directory: %w", err)
+diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/image_overlay_test.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/image_overlay_test.go
+new file mode 100644
+index 0000000..fb3c615
+--- /dev/null
++++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot/image_overlay_test.go
+@@ -0,0 +1,47 @@
++package sdboot
++
++import (
++	"errors"
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++
++	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/options"
++	"github.com/siderolabs/talos/pkg/machinery/constants"
++)
++
++func TestImageIncludesOverlayBeforeMovingEFI(t *testing.T) {
++	for _, fail := range []bool{false, true} {
++		t.Run(map[bool]string{false: "assets", true: "callback error"}[fail], func(t *testing.T) {
++			prefix := t.TempDir()
++			asset := filepath.Join(prefix, "asset.efi")
++			require.NoError(t, os.WriteFile(asset, []byte("boot asset"), 0o600))
++			callbackErr := errors.New("overlay failed")
++			calls := 0
++			_, err := (&Config{}).PrepareBootPartitions(options.InstallOptions{
++				Version: "v1.14.1", Arch: "arm64", ImageMode: true, MountPrefix: prefix,
++				Printf:     func(string, ...any) {},
++				BootAssets: options.BootAssets{UKIPath: asset, SDBootPath: asset},
++				ExtraInstallStep: func() error {
++					calls++
++					if fail {
++						return callbackErr
++					}
++					return os.WriteFile(filepath.Join(prefix, constants.EFIMountPoint, "config.txt"), []byte("kernel=u-boot.bin\n"), 0o600)
++				},
++			})
++			require.Equal(t, 1, calls)
++			if fail {
++				require.ErrorIs(t, err, callbackErr)
++				require.NoDirExists(t, filepath.Join(prefix, "EFI"))
++				return
++			}
++			require.NoError(t, err)
++			data, err := os.ReadFile(filepath.Join(prefix, "EFI", "config.txt"))
++			require.NoError(t, err)
++			require.Equal(t, "kernel=u-boot.bin\n", string(data))
++		})
++	}
++}
+

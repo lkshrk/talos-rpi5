@@ -19,7 +19,7 @@ There is no independent kernel version to bump. Makefile reads Talos's exact
 `PKGS` pin and uses its stock kernel/DTBs. Do not restore the old vendor-kernel
 module list or runtime fallback.
 
-## The remaining Talos patch
+## The remaining Talos patches
 
 `patches/siderolabs/talos/0001-rpi5-loader-conf-fallback.patch` preserves boot
 selection on the existing firmware when EFI writes fail with `EINVAL`.
@@ -33,6 +33,17 @@ Normal firmware reboot is required; do not assume NVRAM-less kexec behavior.
 
 Remove the patch only when upstream covers these behaviors and the same
 regression checks pass without it. Update COMPARISON.md with the evidence.
+
+`0002-image-overlay-assets.patch` invokes the overlay callback in sd-boot's
+image preparation path before moving the EFI source directory. Without it,
+the raw image has a UKI but lacks Pi firmware, U-Boot, DTBs and config.txt.
+The regression checks successful placement and propagation of callback errors.
+The imager must be compiled from these patched sources; overriding only its
+initramfs does not fix the host-side image assembly code.
+
+`make verify` checks the actual raw EFI partition using a read-only Linux loop
+mount. Do not replace this with installer-container checks or a Zstd magic
+check: neither proves the flashable image contains the overlay.
 
 ## Release behavior
 
