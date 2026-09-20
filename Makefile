@@ -1,9 +1,10 @@
 TALOS_VERSION = v1.14.1
+IMAGE_REVISION = 1
 SBCOVERLAY_VERSION = 7d04484be2beb4b1fca56538d2b6d07e7d58681f
 
 REGISTRY ?= ghcr.io
 REGISTRY_USERNAME ?= lkshrk
-TAG ?= $(TALOS_VERSION)
+TAG ?= $(TALOS_VERSION)-rpi5.$(IMAGE_REVISION)
 # Retain the existing runtime extension; override EXTENSIONS= for no extensions.
 EXTENSIONS ?= ghcr.io/siderolabs/gvisor:20250505.0@sha256:d7503b59603f030b972ceb29e5e86979e6c889be1596e87642291fee48ce380c
 
@@ -17,16 +18,19 @@ PKGS = $(shell sed -n 's/^PKGS ?= //p' "$(CHECKOUTS_DIRECTORY)/talos/Makefile")
 INSTALLER_IMAGE = $(REGISTRY)/$(REGISTRY_USERNAME)/talos-rpi5-installer:$(TAG)
 IMAGER = ghcr.io/siderolabs/imager:$(TALOS_VERSION)
 
-.PHONY: help checkouts patches test overlay installer verify release clean
+.PHONY: help image-version checkouts patches test overlay installer verify release clean
 help:
 	@echo "checkouts : Fetch pinned Talos and Pi boot overlay sources"
-	@echo "patches   : Apply only the NVRAM-less boot-selection fix"
+	@echo "patches   : Apply Pi boot-selection and firmware/U-Boot compatibility fixes"
 	@echo "test      : Run the focused Linux boot-selection regression tests"
 	@echo "overlay   : Build the existing Pi U-Boot overlay with stock kernel DTBs"
 	@echo "installer : Build local installer/raw artifacts; does not publish"
 	@echo "verify    : Check installer architecture/version and required Pi boot assets"
 	@echo "release   : Publish the installer artifact as $(INSTALLER_IMAGE)"
 	@echo "clean     : Remove generated checkouts and artifacts"
+
+image-version:
+	@echo "$(TAG)"
 
 checkouts:
 	git clone -c advice.detachedHead=false --depth 1 --branch "$(TALOS_VERSION)" "$(TALOS_REPOSITORY)" "$(CHECKOUTS_DIRECTORY)/talos"
@@ -36,6 +40,8 @@ checkouts:
 patches:
 	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply --check "$(PATCHES_DIRECTORY)/siderolabs/talos/0001-rpi5-loader-conf-fallback.patch"
 	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply "$(PATCHES_DIRECTORY)/siderolabs/talos/0001-rpi5-loader-conf-fallback.patch"
+	cd "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5" && git apply --check "$(PATCHES_DIRECTORY)/talos-rpi5/sbc-raspberrypi5/0001-mainline-pi5-boot-compatibility.patch"
+	cd "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5" && git apply "$(PATCHES_DIRECTORY)/talos-rpi5/sbc-raspberrypi5/0001-mainline-pi5-boot-compatibility.patch"
 
 test:
 	docker run --rm --platform linux/arm64 --cpus=2 --memory=2g \

@@ -1,0 +1,39 @@
+diff --git a/artifacts/raspberrypi-firmware/pkg.yaml b/artifacts/raspberrypi-firmware/pkg.yaml
+--- a/artifacts/raspberrypi-firmware/pkg.yaml
++++ b/artifacts/raspberrypi-firmware/pkg.yaml
+@@ -19,6 +19,8 @@ steps:
+         cp -v boot/COPYING.linux /rootfs/artifacts/arm64/firmware/boot/COPYING.linux
+         cp -rv boot/overlays /rootfs/artifacts/arm64/firmware/boot/overlays
+         cp -rv /dtb/broadcom/bcm2712* /rootfs/artifacts/arm64/firmware/boot/
++        # Older Pi firmware selects this D0 name; overwrite any vendor DT on upgrade.
++        cp -v /dtb/broadcom/bcm2712-d-rpi-5-b.dtb /rootfs/artifacts/arm64/firmware/boot/bcm2712d0-rpi-5-b.dtb
+ finalize:
+   - from: /rootfs
+     to: /rootfs
+diff --git a/artifacts/u-boot/pkg.yaml b/artifacts/u-boot/pkg.yaml
+--- a/artifacts/u-boot/pkg.yaml
++++ b/artifacts/u-boot/pkg.yaml
+@@ -14,6 +14,23 @@ steps:
+     prepare:
+       - |
+         tar xf u-boot.tar.gz --strip-components=1
++      - |
++        # Cover both mainline and vendor DT PCIe windows before accessing NVMe.
++        patch --batch --fuzz=0 -p1 <<'PATCH'
++        --- a/arch/arm/mach-bcm283x/init.c
++        +++ b/arch/arm/mach-bcm283x/init.c
++        @@ -87,7 +87,7 @@
++         		/* Beginning of PCIe section for NVMe */
++        -		.virt = 0x1b80000000UL,
++        -		.phys = 0x1b80000000UL,
++        -		.size = 0x80000000UL,
++        +		.virt = 0x1b00000000UL,
++        +		.phys = 0x1b00000000UL,
++        +		.size = 0x100000000UL,
++         		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
++         			 PTE_BLOCK_NON_SHARE |
++         			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
++        PATCH
+       - |
+         make rpi_5_defconfig
+     build:

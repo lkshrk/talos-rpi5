@@ -11,6 +11,7 @@ on:
       - "patches/**"
       - "profiles/**"
       - "scripts/**"
+      - "tests/**"
       - ".github/workflows/build.yaml"
   pull_request:
     branches:
@@ -20,6 +21,7 @@ on:
       - "patches/**"
       - "profiles/**"
       - "scripts/**"
+      - "tests/**"
       - ".github/workflows/build.yaml"
 
 jobs:
@@ -38,7 +40,8 @@ jobs:
       - name: Check if build should run
         id: check
         run: |
-          VERSION=$(awk '/^TALOS_VERSION = / {print $3}' Makefile)
+          EXPECTED_VERSION=$(make --no-print-directory -s image-version)
+          VERSION=$EXPECTED_VERSION
           should_build=false
           is_tag=false
           is_pr=false
@@ -49,7 +52,11 @@ jobs:
             should_build=true
             is_tag=true
             VERSION=${GITHUB_REF#refs/tags/}
-          elif git diff HEAD~1 HEAD -- Makefile | grep -q '^+TALOS_VERSION = '; then
+            if [[ "$VERSION" != "$EXPECTED_VERSION" ]]; then
+              echo "Tag $VERSION does not match package version $EXPECTED_VERSION" >&2
+              exit 1
+            fi
+          elif git diff HEAD~1 HEAD -- Makefile | grep -Eq '^\+(TALOS_VERSION|IMAGE_REVISION) = '; then
             should_build=true
           fi
           {
@@ -85,7 +92,7 @@ jobs:
       - name: Prepare (checkouts & patches)
         run: make checkouts patches
 
-      - name: Boot-selection regression tests
+      - name: Boot compatibility regression tests
         run: make test
 
       - name: Overlay
@@ -132,7 +139,7 @@ jobs:
           NOTES=$(cat <<EOF
           > ⚠️ Experimental build, use at your own risk.
 
-          Talos with its upstream kernel, the retained Pi 5 boot overlay, and an EFI-variable fallback for upgrades. See COMPARISON.md for hardware validation limits.
+          Talos with its upstream kernel, corrected U-Boot NVMe mappings, matching D0 device-tree aliases, and an EFI-variable fallback for upgrades. This image revision replaces the withdrawn v1.14.1 package. See COMPARISON.md for hardware validation limits.
 
           ### What's available
 
@@ -156,4 +163,5 @@ jobs:
             "${VERSION}" \
             ./_out/metal-arm64.raw.zst \
             --title "${VERSION}" \
+            --prerelease \
             --notes "$NOTES"
