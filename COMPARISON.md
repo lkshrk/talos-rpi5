@@ -1,4 +1,4 @@
-# Talos 1.14.1 reduction plan
+# Talos 1.14.1 comparison and reduction
 
 Baseline: custom release v1.13.9 (`f6c12ac`), compared with Talos v1.14.1 (`2f86b9d2a29b413deddd7122a8420b8913813615`). Talos pins pkgs `v1.14.0-25-gf694e1b`, whose kernel is 6.18.51.
 
@@ -34,3 +34,11 @@ Baseline: custom release v1.13.9 (`f6c12ac`), compared with Talos v1.14.1 (`2f86
 Stock 6.18.51's plain `bcm2712-rpi-5-b.dtb` embeds RP1, enables Ethernet and both PCIe ports; retain that filename. The `-ovl-rp1` variant instead expects a runtime overlay and must not replace it.
 
 This reduction targets k8s-99's Pi 5 NVMe/Ethernet use. Stock-kernel peripheral parity is not established. The running node exposes voltage, CPU thermal and NVMe hwmon devices, but no fan hwmon device; that does not prove the physical absence of a fan. Active-cooler/PoE/Wi-Fi/CM5 claims from old releases must not be carried forward without validation.
+
+## Sources
+
+- [Talos 1.14.1 source and package pin](https://github.com/siderolabs/talos/tree/v1.14.1).
+- [Matching stock ARM64 kernel configuration](https://github.com/siderolabs/pkgs/blob/f694e1b/kernel/build/config-arm64).
+- [Linux 6.18.51 Pi 5 device tree](https://github.com/gregkh/linux/blob/v6.18.51/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts).
+- [Upstream Pi 5 U-Boot integration](https://github.com/siderolabs/sbc-raspberrypi/pull/88), still open at comparison time.
+- [Upstream MACB fixes](https://github.com/siderolabs/pkgs/pull/1526) and [Talos 1.14 release notes](https://github.com/siderolabs/talos/releases/tag/v1.14.0).
