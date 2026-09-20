@@ -6,6 +6,12 @@ The original `v1.14.1` image was withdrawn after a failed Pi upgrade. The repair
 candidate is `v1.14.1-rpi5.2`; it does not overwrite earlier package tags.
 Revision 1's raw disk image also omitted the Pi boot overlay; do not flash it.
 
+**Hardware status:** revision 2 also failed to return from a Pi 5 upgrade.
+It is not validated for deployment. Subsequent diagnostics paired its stock
+kernel with the old vendor device tree and reached userspace without networking;
+that incompatible pairing is a separate failure, not proof of the original cause.
+See the [incident findings](COMPARISON.md#september-20-hardware-findings).
+
 The vendor kernel, replacement module list, old open_tree workaround, and
 image-naming source patches are no longer built or applied.
 See [COMPARISON.md](COMPARISON.md) for the comparison and hardware boundaries.
@@ -17,6 +23,9 @@ architecture, version and UKI, then checks the compiled U-Boot MMU map against
 the NVMe PCI windows in both C0 and D0 device trees. The firmware's legacy D0
 filename must contain the same stock D0 tree, so upgrades overwrite old vendor
 copies instead of leaving them selectable by older EEPROM firmware.
+The RP1 check also requires the stock kernel's nexus layout and an enabled,
+correctly connected Ethernet/PHY node. This guards against mixing vendor boot
+assets with the stock kernel; it does not prove the full image boots on hardware.
 Raw-image verification decompresses the actual disk artifact, attaches it as a
 read-only loop device, mounts its EFI partition read-only, and checks the same
 U-Boot/DTB compatibility plus Pi boot configuration, EFI loader and UKI.

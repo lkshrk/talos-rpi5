@@ -12,9 +12,9 @@ old = struct.pack("<3Q", 0x1B80000000, 0x1B80000000, 0x80000000)
 fixed = struct.pack("<3Q", 0x1B00000000, 0x1B00000000, 0x100000000)
 
 
-def rejects(candidate, reason):
+def rejects(candidate, reason, verifier=verify):
     try:
-        verify(candidate)
+        verifier(candidate)
     except AssertionError as error:
         assert reason in str(error), str(error)
     else:
@@ -27,7 +27,13 @@ def test_boot_assets(files):
     rejects(files | {uboot: files[uboot].replace(fixed, old)}, "outside U-Boot mapping")
     rejects(files | {check["LEGACY_D0"]: b"stale vendor DTB"}, "alias differs")
     rejects(files | {uboot: fixed}, "MMU table")
-    print("PASS: old mapping, stale D0 alias and unrelated tuple are rejected")
+    blob = files[check["C0"]]
+    rejects(files | {check["C0"]: blob.replace(b"rp1_nexus", b"rp1_wrong")}, "RP1 nexus")
+    nodes = check["dtb_nodes"](blob)
+    ethernet = nodes["/aliases"]["ethernet0"].rstrip(b"\0").decode()
+    rejects(nodes | {ethernet: nodes[ethernet] | {"status": b"disabled\0"}}, "disabled", check["verify_rp1"])
+    rejects(nodes | {ethernet: nodes[ethernet] | {"phy-handle": b"\xff" * 4}}, "MDIO child", check["verify_rp1"])
+    print("PASS: old mapping, stale alias, unrelated MMU tuple and broken RP1/PHY bindings rejected")
 
 
 if __name__ == "__main__":
