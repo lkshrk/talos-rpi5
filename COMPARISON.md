@@ -2,10 +2,30 @@
 
 Baseline: custom release v1.13.9 (`f6c12ac`), compared with Talos v1.14.1 (`2f86b9d2a29b413deddd7122a8420b8913813615`). Talos pins pkgs `v1.14.0-25-gf694e1b`, whose kernel is 6.18.51.
 
+## Withdrawn image and boot repair
+
+The initial `v1.14.1` package was withdrawn after k8s-99 failed to return from
+its upgrade reboot. Installation completed successfully; no post-boot console
+log was available, so the exact executed failure path remains unconfirmed.
+Published-artifact and source inspection found two compatibility defects:
+
+- The unchanged U-Boot only mapped NVMe MMIO at `0x1b80000000` for 2GiB. The
+  stock DTBs place the non-prefetchable PCI window at `0x1b00000000`. The repair
+  maps the whole 4GiB aperture, preserving coverage of the old layout.
+- The firmware-facing `bcm2712d0-rpi-5-b.dtb` filename was missing from the new
+  package. Copy-only upgrades could leave its old vendor tree on the ESP even
+  though mainline calls the replacement `bcm2712-d-rpi-5-b.dtb`. The repair
+  packages identical stock D0 bytes at both names, overwriting stale copies.
+
+Regression checks inspect the real compiled MMU table and both packaged DTBs,
+plus byte equality of the D0 aliases. These replace the previous insufficient
+file-presence-only boot checks. Hardware recovery/boot verification is still a
+separate gate; the repair is published under a new package tag.
+
 ## Preserve before changing the pipeline
 
 - Existing public installer repository and raw-image release artifact.
-- Known-working custom Pi 5 U-Boot/NVMe overlay, pinned to an exact revision.
+- Pinned Pi 5 U-Boot/NVMe overlay, with its MMU layout adapted to stock DTBs.
 - NVRAM-less upgrade boot selection. Add regression tests for the new upstream pre-cleanup selection and rollback paths before rebasing the fix.
 - Existing extension selection remains configurable; do not silently remove runtime support in the same refactor.
 
