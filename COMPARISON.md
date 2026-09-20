@@ -67,6 +67,28 @@ The mixed boot assets have a concrete RP1 binding mismatch:
   already has `rp1_nexus` and enabled Ethernet. Therefore the mixed-tree failure
   cannot establish the cause of the earlier full-image failure.
 
+Persistent logs subsequently confirmed the executed mixed-tree failure. The
+EPHEMERAL filesystem was inspected read-only; its dirty XFS journal was replayed
+only into a USB-backed device-mapper snapshot, with the original partition
+write-protected and its write counters verified unchanged. The recovered archive
+SHA256 is `7781e9e87cf2006f3f9d248a8e0c113d814c3e5663b5db9b6f6e9248c5c12eea`.
+In `kernel.log.1`, lines 32991–32992 and 42943–42944 report:
+
+```text
+OF: resolver: node label 'clk_rp1_xosc' not found in live devicetree symbols table
+rp1_pci 0002:01:00.0: probe with driver rp1_pci failed with error -22
+```
+
+The driver returns before populating RP1 child devices. In the corresponding
+controller startup, only loopback is brought up, desired link aliases are empty,
+and VLAN `net0.69` is absent. META, STATE, and EPHEMERAL mounts succeed. This is
+an RP1 device-tree initialization failure, not a DNS-server or NVMe-mount fault.
+Adding just a missing clock-symbol alias is insufficient: the legacy bus and
+interrupt topology also differs, and the dynamic overlay leaves Ethernet disabled.
+These instrumented records confirm the mixed-tree failure; they do not establish
+the cause of the earlier complete repaired-image attempt. Log rotation, multiple
+boots, and unsynchronized 1970 timestamps require explicit segment attribution.
+
 Talos's permanent-MAC selector logic is unchanged between these versions;
 1.14 improves alias-change notification. The pinned U-Boot already supplies the
 Ethernet MAC through DT aliases. A missing/different runtime permanent MAC remains
