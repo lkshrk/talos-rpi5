@@ -3,7 +3,8 @@
 Build Talos 1.14.1 with the upstream kernel, a corrected Pi U-Boot/NVMe overlay,
 and a narrow loader.conf fallback when firmware rejects EFI variable writes.
 The original `v1.14.1` image was withdrawn after a failed Pi upgrade. The repair
-candidate is `v1.14.1-rpi5.1`; it does not overwrite the withdrawn tag.
+candidate is `v1.14.1-rpi5.2`; it does not overwrite earlier package tags.
+Revision 1's raw disk image also omitted the Pi boot overlay; do not flash it.
 
 The vendor kernel, replacement module list, old open_tree workaround, and
 image-naming source patches are no longer built or applied.
@@ -16,6 +17,9 @@ architecture, version and UKI, then checks the compiled U-Boot MMU map against
 the NVMe PCI windows in both C0 and D0 device trees. The firmware's legacy D0
 filename must contain the same stock D0 tree, so upgrades overwrite old vendor
 copies instead of leaving them selectable by older EEPROM firmware.
+Raw-image verification decompresses the actual disk artifact, attaches it as a
+read-only loop device, mounts its EFI partition read-only, and checks the same
+U-Boot/DTB compatibility plus Pi boot configuration, EFI loader and UKI.
 These checks do not replace a physical Pi test: fresh boot, NVMe, Ethernet,
 cooling and upgrade/rollback must be verified before production use.
 The old vendor-kernel release's CM5/peripheral claims do not apply to this image.
@@ -23,7 +27,8 @@ The old vendor-kernel release's CM5/peripheral claims do not apply to this image
 ## Build locally
 
 Requires Docker Buildx, Git, GNU Make 4+ and Python 3. On macOS use `gmake`.
-Use a Linux/arm64-capable builder.
+Use a Linux/arm64-capable builder. `make verify` additionally needs a Linux host
+with zstd, util-linux, udevadm and sudo access for read-only loop mounts.
 No image is published by these commands:
 
 ```sh
@@ -42,8 +47,11 @@ Outputs:
 - `_out/overlay/` and `_out/installer-base/`: local OCI inputs.
 
 The overlay device trees come from the exact stock kernel package pinned by
-Talos. The official imager combines that stock kernel with our patched Talos
-initramfs and installer binary. Only the sd-boot patch changes Talos behavior.
+Talos. A locally built, patched imager combines that stock kernel with our
+patched Talos initramfs and installer binary. The sd-boot patches preserve boot
+selection and run the overlay installer when preparing raw-image partitions.
+Using the official imager bypasses the latter fix and produces an incomplete
+Pi raw image. The local imager is loaded into Docker, never published.
 
 The existing gVisor extension is retained by default. Set `EXTENSIONS=` to omit
 it, or provide compatible extension image references. It is not required for
@@ -54,14 +62,14 @@ Pi boot, NVMe or Ethernet.
 Publishing is a separate, explicit step and requires crane plus registry access:
 
 ```sh
-make release TAG=v1.14.1-rpi5.1 REGISTRY_USERNAME=lkshrk
+make release TAG=v1.14.1-rpi5.2 REGISTRY_USERNAME=lkshrk
 ```
 
 After hardware validation, the upgrade command is:
 
 ```sh
 talosctl upgrade --nodes <node-ip> --reboot-mode powercycle \
-  --image ghcr.io/lkshrk/talos-rpi5-installer:v1.14.1-rpi5.1
+  --image ghcr.io/lkshrk/talos-rpi5-installer:v1.14.1-rpi5.2
 ```
 
 For a fresh installation, decompress `metal-arm64.raw.zst` and flash it to the

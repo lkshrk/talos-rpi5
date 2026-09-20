@@ -22,6 +22,23 @@ plus byte equality of the D0 aliases. These replace the previous insufficient
 file-presence-only boot checks. Hardware recovery/boot verification is still a
 separate gate; the repair is published under a new package tag.
 
+## Raw-image packaging repair (revision 2)
+
+Inspection of the generated raw EFI partition found only the EFI loader, UKI
+and loader.conf: the Pi overlay was absent. Talos 1.14.1's sd-boot image path
+copies those assets, then relocates the EFI directory without invoking
+`ExtraInstallStep`. Its normal installer and GRUB image paths invoke that
+callback. This is independent of the corrected installer overlay in revision 1.
+
+The bounded repair adds the callback before relocation and propagates errors.
+A regression test requires a callback-created file in the final EFI source
+directory and rejects a failed callback. Build the imager from patched source,
+load it locally, and use it for both outputs. Verify the raw artifact itself
+with a read-only Linux loop mount and the existing U-Boot/DTB checker, plus
+config.txt and EFI boot files. Publish only as a new `v1.14.1-rpi5.2` package.
+Hardware boot remains a separate gate. No existing disks are modified by the
+verification command; it attaches only the decompressed build artifact.
+
 ## Preserve before changing the pipeline
 
 - Existing public installer repository and raw-image release artifact.
@@ -40,7 +57,7 @@ separate gate; the repair is published under a new package tag.
 
 - Firmware/U-Boot overlay for the existing NVMe boot chain. The generic upstream Pi 5 U-Boot integration remains unmerged.
 - Focused sd-boot `EINVAL` fallback to loader.conf, preserving EFI precedence and errors unrelated to unavailable firmware variables.
-- Only build-name customization needed to preserve existing image publication paths; no Talos feature fork beyond boot selection.
+- Only build-name customization needed to preserve existing image publication paths; Talos patches are limited to boot selection and raw-image overlay installation.
 
 ## Validation gates
 
