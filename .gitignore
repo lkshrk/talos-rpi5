@@ -2,3 +2,4 @@ checkouts/
 _out/
 /.direnv
 .DS_Store
+__pycache__/

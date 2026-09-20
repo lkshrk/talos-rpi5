@@ -7,7 +7,9 @@
 2. Keep `SBCOVERLAY_VERSION` pinned. Change it only after reviewing its U-Boot,
    firmware and installer behavior. Keep the overlay compatibility patch:
    U-Boot must map the kernel DTB's NVMe PCI aperture, and the legacy firmware
-   D0 filename must be overwritten with the matching stock D0 DTB.
+   D0 filename must be overwritten with the matching stock D0 DTB. Keep the
+   `configTxtAppend` overlay option in `profiles/*.json`; D0 boards only boot the
+   stock `bcm2712-d-rpi-5-b.dtb`, and the firmware will not pick it by itself.
 3. Run `make clean`, then `make checkouts patches test`. The patch must apply
    cleanly and its Linux tests must pass.
 4. Run `make overlay installer verify`. These produce local artifacts without

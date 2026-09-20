@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the pinned Pi 5 U-Boot's compiled MMU table against shipped DTBs."""
+"""Validate the pinned Pi 5 U-Boot mapping and stock-kernel DT contracts."""
 import struct
 import sys
 from pathlib import Path
@@ -89,6 +89,32 @@ def nvme_window(blob):
     return windows[0]
 
 
+def verify_rp1(nodes):
+    """Reject the legacy vendor bus, which stock Linux cannot use for RP1 IRQs."""
+    nexus = [path for path in nodes if path.rsplit("/", 1)[-1] == "rp1_nexus"]
+    assert len(nexus) == 1, "expected one mainline RP1 nexus"
+    nexus = nexus[0]
+    assert b"pci1de4,1" in nodes[nexus].get("compatible", b"").split(b"\0"), "invalid RP1 nexus compatible"
+    ethernet = nodes.get("/aliases", {}).get("ethernet0", b"").rstrip(b"\0").decode()
+    assert ethernet.startswith(nexus + "/") and ethernet in nodes, "Ethernet alias must point inside RP1 nexus"
+    eth = nodes[ethernet]
+    assert b"raspberrypi,rp1-gem" in eth.get("compatible", b"").split(b"\0"), "invalid RP1 Ethernet compatible"
+    path = ethernet
+    while path != "/":
+        assert nodes[path].get("status", b"okay\0") in (b"okay\0", b"ok\0"), "RP1 Ethernet or ancestor disabled"
+        path = path.rsplit("/", 1)[0] or "/"
+    mdio = ethernet + "/mdio"
+    assert mdio in nodes, "missing mainline Ethernet MDIO bus"
+    assert nodes[mdio].get("status", b"okay\0") in (b"okay\0", b"ok\0"), "Ethernet MDIO bus disabled"
+    handle = eth.get("phy-handle", b"")
+    assert len(handle) == 4 and int.from_bytes(handle, "big") > 0, "invalid Ethernet PHY handle"
+    phys = [path for path, props in nodes.items() if props.get("phandle") == handle]
+    assert len(phys) == 1 and phys[0].rsplit("/", 1)[0] == mdio, "Ethernet PHY handle must reference MDIO child"
+    phy = nodes[phys[0]]
+    assert phy.get("status", b"okay\0") in (b"okay\0", b"ok\0"), "Ethernet PHY disabled"
+    assert len(phy.get("reg", b"")) == 4 and int.from_bytes(phy["reg"], "big") < 32, "invalid MDIO PHY address"
+
+
 def verify_boot_assets(files):
     """files maps REQUIRED full installer paths to their effective layer bytes."""
     assert REQUIRED <= files.keys(), f"missing boot assets: {sorted(REQUIRED - files.keys())}"
@@ -99,8 +125,9 @@ def verify_boot_assets(files):
             f"{name}: NVMe PCI window {address:#x}..{address + length:#x} "
             f"outside U-Boot mapping {base:#x}..{base + size:#x}"
         )
+        verify_rp1(dtb_nodes(files[name]))
     assert files[LEGACY_D0] == files[D0], "legacy D0 firmware alias differs from stock D0 DTB"
-    print("PASS: compiled U-Boot maps C0/D0 NVMe windows; legacy D0 alias matches")
+    print("PASS: NVMe mappings, mainline RP1 Ethernet/MDIO contracts and D0 alias")
 
 
 if __name__ == "__main__":

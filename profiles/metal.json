@@ -4,6 +4,6 @@
   "platform": "metal",
   "secureboot": false,
   "input": {"initramfs": {"path": "/assets/initramfs-arm64.xz"}},
-  "overlay": {"name": "rpi5", "image": {"ociPath": "/assets/overlay"}},
+  "overlay": {"name": "rpi5", "image": {"ociPath": "/assets/overlay"}, "options": {"configTxtAppend": "device_tree=bcm2712-d-rpi-5-b.dtb"}},
   "output": {"kind": "image", "outFormat": ".zst"}
 }
