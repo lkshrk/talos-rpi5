@@ -11,6 +11,12 @@ Revision 3 appends `device_tree=bcm2712-d-rpi-5-b.dtb` to config.txt; it targets
 D0 boards only and must not be installed on C0/C1-stepping Pi 5 hardware.
 Revision 1's raw disk image also omitted the Pi boot overlay; do not flash it.
 
+**Hardware status:** revision 2 also failed to return from a Pi 5 upgrade.
+It is not validated for deployment. Subsequent diagnostics paired its stock
+kernel with the old vendor device tree and reached userspace without networking;
+that incompatible pairing is a separate failure, not proof of the original cause.
+See the [incident findings](COMPARISON.md#september-20-hardware-findings).
+
 The vendor kernel, replacement module list, old open_tree workaround, and
 image-naming source patches are no longer built or applied.
 See [COMPARISON.md](COMPARISON.md) for the comparison and hardware boundaries.
@@ -23,6 +29,9 @@ the NVMe PCI windows in both C0 and D0 device trees, and requires the installer'
 overlay options to append the D0 `device_tree=` selection. The legacy D0 filename
 is still overwritten with the stock D0 tree, but current EEPROM firmware ignores
 that name and applies `bcm2712d0.dtbo` to the base tree instead.
+The RP1 check also requires the stock kernel's nexus layout and an enabled,
+correctly connected Ethernet/PHY node. This guards against mixing vendor boot
+assets with the stock kernel; it does not prove the full image boots on hardware.
 Raw-image verification decompresses the actual disk artifact, attaches it as a
 read-only loop device, mounts its EFI partition read-only, and checks the same
 U-Boot/DTB compatibility plus Pi boot configuration, EFI loader and UKI.

@@ -60,6 +60,60 @@ config.txt and EFI boot files. Published as `v1.14.1-rpi5.2`.
 Hardware boot remains a separate gate. No existing disks are modified by the
 verification command; it attaches only the decompressed build artifact.
 
+## September 20 hardware findings
+
+Revision 2 was installed using the verified image digest
+`sha256:8174084b26f275abd718cc98c51cc7fe1d35e2b5622c839ee75122535ea93f06`.
+It still failed to return after reboot. A successful image build, corrected
+MMU window, and complete EFI partition did not establish hardware bootability.
+The executed cause of this full-image failure remains unconfirmed.
+
+A later diagnostic boot preserved the working 1.13.9 firmware/device trees and
+loaded the 1.14.1 kernel/initrd. Disabling the UKI splash exposed Talos userspace
+at approximately 290 seconds uptime: DNS requests to `10.254.0.1:53` failed
+with `network is unreachable`, time synchronization failed, and service startup
+waited for apid, cri, etcd, and trustd. No kernel panic was visible. The photo
+does not show a runtime version. Both original 1.13.9-only arguments were restored
+for that trial (`init_on_alloc=1`, `nvme_core.io_timeout=4294967295`), along with
+diagnostic options; this was not an isolated test of those two arguments.
+
+The mixed boot assets have a concrete RP1 binding mismatch:
+
+- The actual old D0 DTB (`a23feddcc24667d9168eff8485f7181a75f86970a3b7f6ac472d2a2f4e86bbd9`)
+  enables Ethernet beneath a legacy `rp1` simple bus.
+- Linux 6.18.51's RP1 PCI driver searches for `rp1_nexus`. Without it, its dynamic
+  mainline overlay uses a different bus/interrupt topology, with Ethernet disabled
+  unless the board tree enables it. The legacy node cannot supply those overrides.
+- The repaired full image's D0 DTB (`ff59a8084cf00a677e6483a4461bb9de2ae0200c01948b78486716c38c5d026e`)
+  already has `rp1_nexus` and enabled Ethernet. Therefore the mixed-tree failure
+  cannot establish the cause of the earlier full-image failure.
+
+Talos's permanent-MAC selector logic is unchanged between these versions;
+1.14 improves alias-change notification. The pinned U-Boot already supplies the
+Ethernet MAC through DT aliases. A missing/different runtime permanent MAC remains
+possible, but was not observed; do not broaden the selector speculatively.
+
+Upstream overlay 0.2.2 includes vendor-derived DTs adapted to mainline RP1/PHY
+bindings. It is not a proven drop-in replacement for this NVMe boot chain:
+the full Pi 5 U-Boot/NVMe integration in upstream PR 88 is still open at this
+inspection. No whole-overlay replacement was retained or published.
+
+Boot counting was also tested using the known-working 1.13.9 payload. The test
+entry booted, but its `+1.conf` filename remained unchanged, so automatic fallback
+cannot be trusted here. The original boot files and selection were restored.
+`panic=0` is not evidence of a kernel panic: Talos userspace also honors it after
+fatal startup failures. Further RCA needs boot/interface evidence from the
+matching full image, rather than another mixed-kernel/device-tree experiment.
+
+Evidence sources:
+
+- [Exact RP1 PCI driver](https://github.com/gregkh/linux/blob/v6.18.51/drivers/misc/rp1/rp1_pci.c).
+- [Mainline RP1 peripheral defaults](https://github.com/gregkh/linux/blob/v6.18.51/arch/arm64/boot/dts/broadcom/rp1-common.dtsi).
+- [Talos host DNS cache](https://github.com/siderolabs/talos/blob/v1.14.1/internal/pkg/dns/cache.go).
+- [Talos userspace panic handling](https://github.com/siderolabs/talos/blob/v1.13.9/internal/app/machined/main.go).
+- [Upstream RP1/PHY adaptations](https://github.com/siderolabs/sbc-raspberrypi/tree/v0.2.2/artifacts/dtb/raspberrypi/patches).
+- [Unmerged Pi 5 U-Boot/NVMe integration](https://github.com/siderolabs/sbc-raspberrypi/pull/88).
+
 ## Preserve before changing the pipeline
 
 - Existing public installer repository and raw-image release artifact.
