@@ -59,14 +59,14 @@ installer:
 	$(MAKE) -C "$(CHECKOUTS_DIRECTORY)/talos" target-installer-base \
 		TAG=$(TALOS_VERSION) INSTALLER_ARCH=arm64 PLATFORM=linux/arm64 PUSH=false \
 		TARGET_ARGS="--output=type=oci,dest=$(ARTIFACTS)/installer-base,tar=false"
-	docker run --rm --platform linux/arm64 \
+	python3 scripts/render-profile.py profiles/installer.json $(EXTENSIONS) | \
+	docker run --rm -i --platform linux/arm64 \
 		-v "$(ARTIFACTS):/assets:ro" -v "$(ARTIFACTS):/out" \
-		-v "$(CURDIR)/profiles:/profiles:ro" "$(IMAGER)" /profiles/installer.yaml \
-		$(foreach ext,$(EXTENSIONS),--system-extension-image=$(ext))
-	docker run --rm --platform linux/arm64 --privileged \
+		"$(IMAGER)" -
+	python3 scripts/render-profile.py profiles/metal.json $(EXTENSIONS) | \
+	docker run --rm -i --platform linux/arm64 --privileged \
 		-v "$(ARTIFACTS):/assets:ro" -v "$(ARTIFACTS):/out" \
-		-v "$(CURDIR)/profiles:/profiles:ro" "$(IMAGER)" /profiles/metal.yaml \
-		$(foreach ext,$(EXTENSIONS),--system-extension-image=$(ext))
+		"$(IMAGER)" -
 
 verify:
 	python3 scripts/verify-artifacts.py "$(ARTIFACTS)" "$(TALOS_VERSION)"
