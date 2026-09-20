@@ -53,3 +53,10 @@ release. Publishing uses the already-verified installer archive, not a rebuild.
 `make image-version` prints the package tag derived from `TALOS_VERSION` and
 `IMAGE_REVISION`. The Talos source/kernel version is independent of that repair
 suffix. A tag build must match that package version exactly.
+
+Tuppr 0.5.4 uses the Talos runtime version as the installer tag. After verifying
+a repair revision, the manual `Publish verified runtime alias` workflow can
+point that canonical registry tag at the verified digest. It checks both the
+revision digest and image version label; it does not recreate a GitHub release.
+Talos may reuse an already-pulled image: remove only a stale installer tag from
+its containerd store and verify the newly pulled digest before resuming Tuppr.
