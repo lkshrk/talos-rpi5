@@ -55,7 +55,8 @@ main retains the existing automatic tag/release behavior; tag pushes also
 release. Publishing uses the already-verified installer archive, not a rebuild.
 `make image-version` prints the package tag: `TALOS_VERSION`, plus
 `-rpi5.<IMAGE_REVISION>` only when `IMAGE_REVISION` is set. The Talos
-source/kernel version is independent of that repair suffix. A tag build must match that package version exactly.
+source/kernel version is independent of that repair suffix. A tag build must
+match that package version exactly.
 
 Tuppr 0.5.4 uses the Talos runtime version as the installer tag. After verifying
 a repair revision, the manual `Publish verified runtime alias` workflow can
