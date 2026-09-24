@@ -1,7 +1,8 @@
 # Updating the minimal Pi image
 
 1. Change `TALOS_VERSION` in Makefile. Review the official release notes and the
-   retained sd-boot patch against that exact version. Increment `IMAGE_REVISION`
+   retained sd-boot patch against that exact version. Leave `IMAGE_REVISION`
+   empty so the package tag equals the Talos version. Set it (`-rpi5.<N>`) only
    when repairing packaging without changing the Talos version; never reuse a
    withdrawn package tag.
 2. Keep `SBCOVERLAY_VERSION` pinned. Change it only after reviewing its U-Boot,
@@ -52,9 +53,10 @@ check: neither proves the flashable image contains the overlay.
 Pull-request builds never publish registry images. A version-changing merge to
 main retains the existing automatic tag/release behavior; tag pushes also
 release. Publishing uses the already-verified installer archive, not a rebuild.
-`make image-version` prints the package tag derived from `TALOS_VERSION` and
-`IMAGE_REVISION`. The Talos source/kernel version is independent of that repair
-suffix. A tag build must match that package version exactly.
+`make image-version` prints the package tag: `TALOS_VERSION`, plus
+`-rpi5.<IMAGE_REVISION>` only when `IMAGE_REVISION` is set. The Talos
+source/kernel version is independent of that repair suffix. A tag build must
+match that package version exactly.
 
 Tuppr 0.5.4 uses the Talos runtime version as the installer tag. After verifying
 a repair revision, the manual `Publish verified runtime alias` workflow can

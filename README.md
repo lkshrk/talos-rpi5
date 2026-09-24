@@ -2,8 +2,9 @@
 
 Build Talos 1.14.1 with the upstream kernel, a corrected Pi U-Boot/NVMe overlay,
 and a narrow loader.conf fallback when firmware rejects EFI variable writes.
-The original `v1.14.1` image was withdrawn after a failed Pi upgrade. The repair
-candidate is `v1.14.1-rpi5.3`; it does not overwrite earlier package tags.
+The original `v1.14.1` package was withdrawn after a failed Pi upgrade. The
+current `v1.14.1` build carries the revision 3 D0 fix; repair revisions
+(`v1.14.1-rpi5.<N>`) stay published and are never overwritten.
 Revisions 1 and 2 hang at the Talos splash on a D0-stepping board (Pi 5 Rev 1.1)
 and leave no kernel log. The suspected mechanism, captured on identical hardware
 in siderolabs/talos#12748 but not on this Pi: the firmware loads the mainline
@@ -79,14 +80,14 @@ Pi boot, NVMe or Ethernet.
 Publishing is a separate, explicit step and requires crane plus registry access:
 
 ```sh
-make release TAG=v1.14.1-rpi5.3 REGISTRY_USERNAME=lkshrk
+make release TAG=v1.14.1 REGISTRY_USERNAME=lkshrk
 ```
 
 After hardware validation, the upgrade command is:
 
 ```sh
 talosctl upgrade --nodes <node-ip> --reboot-mode powercycle \
-  --image ghcr.io/lkshrk/talos-rpi5-installer:v1.14.1-rpi5.3
+  --image ghcr.io/lkshrk/talos-rpi5-installer:v1.14.1
 ```
 
 For a fresh installation, decompress `metal-arm64.raw.zst` and flash it to the
@@ -95,8 +96,9 @@ intended boot disk. Flashing destroys that disk's existing contents.
 CI builds pull requests without publishing container images, and retains the
 candidate installer/raw image as workflow artifacts. The existing tagged and
 main-version-bump release flows publish prereleases only after build and
-verification pass. The package tag adds `-rpi5.<IMAGE_REVISION>`; the Talos
-version inside the image stays `TALOS_VERSION`.
+verification pass. The package tag is `TALOS_VERSION`, which Tuppr resolves
+directly. Set `IMAGE_REVISION` only for a repair rebuild of the same Talos
+version; that adds `-rpi5.<IMAGE_REVISION>` and needs the runtime alias workflow.
 
 An unreachable node cannot consume a new installer over its Talos API. Recovery
 of the withdrawn image may require restoring the complete known-working boot
