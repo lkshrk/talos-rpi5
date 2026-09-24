@@ -1,10 +1,10 @@
 TALOS_VERSION = v1.14.1
-IMAGE_REVISION = 3
+IMAGE_REVISION =
 SBCOVERLAY_VERSION = 7d04484be2beb4b1fca56538d2b6d07e7d58681f
 
 REGISTRY ?= ghcr.io
 REGISTRY_USERNAME ?= lkshrk
-TAG ?= $(TALOS_VERSION)-rpi5.$(IMAGE_REVISION)
+TAG ?= $(TALOS_VERSION)$(if $(IMAGE_REVISION),-rpi5.$(IMAGE_REVISION))
 # Retain the existing runtime extension; override EXTENSIONS= for no extensions.
 EXTENSIONS ?= ghcr.io/siderolabs/gvisor:20250505.0@sha256:d7503b59603f030b972ceb29e5e86979e6c889be1596e87642291fee48ce380c
 
