@@ -163,7 +163,7 @@ Evidence sources:
 1. Run focused boot-selection regression tests on Linux, including failure cases and rollback/probe behavior.
 2. Apply the reduced patches cleanly to pinned upstream sources; validate build commands and workflow syntax.
 3. Build overlay, patched Talos userland/installer, and raw image using the official kernel.
-4. Inspect artifact architecture/version and boot assets. Hardware boot, NVMe, Ethernet stability, cooling and upgrade/rollback still require a separate physical Pi test before deployment.
+4. Inspect artifact architecture/version and boot assets. Hardware boot, NVMe and Ethernet were confirmed on k8s-99 (D0) with `v1.14.1` on 2026-09-24; cooling, long-term Ethernet stability and upgrade/rollback through the Talos API remain untested.
 
 ## Hardware boundary
 
