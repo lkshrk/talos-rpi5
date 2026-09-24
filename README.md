@@ -14,11 +14,14 @@ Revision 3 appends `device_tree=bcm2712-d-rpi-5-b.dtb` to config.txt; it targets
 D0 boards only and must not be installed on C0/C1-stepping Pi 5 hardware.
 Revision 1's raw disk image also omitted the Pi boot overlay; do not flash it.
 
-**Hardware status:** revision 2 also failed to return from a Pi 5 upgrade.
-It is not validated for deployment. Subsequent diagnostics paired its stock
-kernel with the old vendor device tree and reached userspace without networking;
-that incompatible pairing is a separate failure, not proof of the original cause.
-See the [incident findings](COMPARISON.md#september-20-hardware-findings).
+**Hardware status:** `v1.14.1` (revision 3 content) booted k8s-99 (Pi 5 Model B
+Rev 1.1, BCM2712 D0) from NVMe on 2026-09-24: kernel 6.18.51, RP1 Ethernet up
+with the board MAC, VLAN sub-interfaces, etcd and Ceph healthy within a minute.
+Revisions 1 and 2 failed to return from the same upgrade; their diagnostics
+paired the stock kernel with the old vendor device tree and reached userspace
+without networking, a separate failure. See the
+[incident findings](COMPARISON.md#september-20-hardware-findings). Upgrade and
+rollback through the Talos API, cooling, and non-D0 boards remain unvalidated.
 
 The vendor kernel, replacement module list, old open_tree workaround, and
 image-naming source patches are no longer built or applied.
@@ -34,7 +37,8 @@ is still overwritten with the stock D0 tree, but current EEPROM firmware ignores
 that name and applies `bcm2712d0.dtbo` to the base tree instead.
 The RP1 check also requires the stock kernel's nexus layout and an enabled,
 correctly connected Ethernet/PHY node. This guards against mixing vendor boot
-assets with the stock kernel; it does not prove the full image boots on hardware.
+assets with the stock kernel; the 2026-09-24 k8s-99 boot is the hardware proof
+for the D0 path.
 Raw-image verification decompresses the actual disk artifact, attaches it as a
 read-only loop device, mounts its EFI partition read-only, and checks the same
 U-Boot/DTB compatibility plus Pi boot configuration, EFI loader and UKI.
