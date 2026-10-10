@@ -183,5 +183,5 @@ jobs:
             "${VERSION}" \
             ./_out/metal-arm64.raw.zst \
             --title "${VERSION}" \
-            --prerelease \
+            --latest \
             --notes "$NOTES"
