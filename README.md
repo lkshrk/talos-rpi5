@@ -99,8 +99,9 @@ intended boot disk. Flashing destroys that disk's existing contents.
 
 CI builds pull requests without publishing container images, and retains the
 candidate installer/raw image as workflow artifacts. The existing tagged and
-main-version-bump release flows publish the latest release only after build and
-verification pass. The package tag is `TALOS_VERSION`, which Tuppr resolves
+main-version-bump release flows publish only after build and verification pass:
+a `TALOS_VERSION` bump on `main` becomes the latest release, while
+`IMAGE_REVISION` rebuilds and manual tags stay prereleases. The package tag is `TALOS_VERSION`, which Tuppr resolves
 directly. Set `IMAGE_REVISION` only for a repair rebuild of the same Talos
 version; that adds `-rpi5.<IMAGE_REVISION>` and needs the runtime alias workflow.
 

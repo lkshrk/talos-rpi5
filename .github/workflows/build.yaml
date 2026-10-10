@@ -32,6 +32,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       is_tag: ${{ steps.check.outputs.is_tag }}
       is_pr: ${{ steps.check.outputs.is_pr }}
+      talos_bump: ${{ steps.check.outputs.talos_bump }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -45,6 +46,7 @@ jobs:
           should_build=false
           is_tag=false
           is_pr=false
+          talos_bump=false
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             should_build=true
             is_pr=true
@@ -58,12 +60,16 @@ jobs:
             fi
           elif git diff HEAD~1 HEAD -- Makefile | grep -Eq '^\+(TALOS_VERSION|IMAGE_REVISION) ='; then
             should_build=true
+            if git diff HEAD~1 HEAD -- Makefile | grep -Eq '^\+TALOS_VERSION ='; then
+              talos_bump=true
+            fi
           fi
           {
             echo "should_build=$should_build"
             echo "version=$VERSION"
             echo "is_tag=$is_tag"
             echo "is_pr=$is_pr"
+            echo "talos_bump=$talos_bump"
           } >> "$GITHUB_OUTPUT"
 
   build:
@@ -155,6 +161,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.check-version.outputs.version }}
+          RELEASE_KIND: ${{ needs.check-version.outputs.talos_bump == 'true' && '--latest' || '--prerelease' }}
         run: |
           NOTES=$(cat <<EOF
           > ⚠️ Experimental build, use at your own risk.
@@ -183,5 +190,5 @@ jobs:
             "${VERSION}" \
             ./_out/metal-arm64.raw.zst \
             --title "${VERSION}" \
-            --latest \
+            "$RELEASE_KIND" \
             --notes "$NOTES"
