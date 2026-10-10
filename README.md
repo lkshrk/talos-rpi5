@@ -109,6 +109,21 @@ An unreachable node cannot consume a new installer over its Talos API. Recovery
 of the withdrawn image may require restoring the complete known-working boot
 assets: selecting the old UKI alone does not restore overwritten shared DTBs.
 
+## Jumbo frames on the onboard Ethernet
+
+The RP1 Ethernet driver (`macb`) refuses MTU changes while the link is up, and
+Talos raises the link before it applies a `LinkConfig` MTU, so `mtu: 9000`
+never takes effect (`error setting MTU … device or resource busy`). The image
+ships `/usr/lib/systemd/network/10-rpi5-macb-jumbo.link`, which sets MTU 9000
+while udevd registers the interface, before Talos brings the link up. It
+applies only when the kernel command line contains `talos_rpi5.macb_jumbo`.
+
+The node boots through sd-boot, which ignores `machine.install.extraKernelArgs`,
+so the argument is baked into the UKI at build time through `KERNEL_ARGS`. The
+default build sets it; build with `KERNEL_ARGS=` for an image that keeps the
+default MTU of 1500. On a jumbo build keep `LinkConfig`/`VLANConfig` at 9000 as
+well, so Talos does not try to lower it.
+
 ## Maintenance
 
 See [UPGRADING.md](UPGRADING.md). `make clean` deletes generated checkouts and
