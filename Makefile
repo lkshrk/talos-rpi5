@@ -49,7 +49,7 @@ test:
 	docker run --rm --platform linux/arm64 --cpus=2 --memory=2g \
 		-v "$(CHECKOUTS_DIRECTORY)/talos:/src" -w /src \
 		-v talos-rpi5-go-mod:/go/pkg/mod -v talos-rpi5-go-build:/root/.cache/go-build \
-		-e GOMAXPROCS=2 golang:1.26.5 \
+		-e GOMAXPROCS=2 -e GOTOOLCHAIN=auto golang:1.26.5 \
 		go test -p 1 ./internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot
 
 overlay:
