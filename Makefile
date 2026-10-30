@@ -7,9 +7,6 @@ REGISTRY_USERNAME ?= lkshrk
 TAG ?= $(TALOS_VERSION)$(if $(IMAGE_REVISION),-rpi5.$(IMAGE_REVISION))
 # Retain the existing runtime extension; override EXTENSIONS= for no extensions.
 EXTENSIONS ?= ghcr.io/siderolabs/gvisor:20250505.0@sha256:d7503b59603f030b972ceb29e5e86979e6c889be1596e87642291fee48ce380c
-# Baked into the UKI command line; talos_rpi5.macb_jumbo enables the 9000 MTU link file. Override KERNEL_ARGS= for none.
-KERNEL_ARGS ?= talos_rpi5.macb_jumbo
-export KERNEL_ARGS
 
 TALOS_REPOSITORY = https://github.com/siderolabs/talos.git
 SBCOVERLAY_REPOSITORY = https://github.com/talos-rpi5/sbc-raspberrypi5.git
@@ -45,8 +42,6 @@ patches:
 	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply "$(PATCHES_DIRECTORY)/siderolabs/talos/0001-rpi5-loader-conf-fallback.patch"
 	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply --check "$(PATCHES_DIRECTORY)/siderolabs/talos/0002-image-overlay-assets.patch"
 	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply "$(PATCHES_DIRECTORY)/siderolabs/talos/0002-image-overlay-assets.patch"
-	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply --check "$(PATCHES_DIRECTORY)/siderolabs/talos/0003-rpi5-macb-jumbo-link.patch"
-	cd "$(CHECKOUTS_DIRECTORY)/talos" && git apply "$(PATCHES_DIRECTORY)/siderolabs/talos/0003-rpi5-macb-jumbo-link.patch"
 	cd "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5" && git apply --check "$(PATCHES_DIRECTORY)/talos-rpi5/sbc-raspberrypi5/0001-mainline-pi5-boot-compatibility.patch"
 	cd "$(CHECKOUTS_DIRECTORY)/sbc-raspberrypi5" && git apply "$(PATCHES_DIRECTORY)/talos-rpi5/sbc-raspberrypi5/0001-mainline-pi5-boot-compatibility.patch"
 
