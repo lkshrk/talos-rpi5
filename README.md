@@ -102,8 +102,11 @@ candidate installer/raw image as workflow artifacts. The existing tagged and
 main-version-bump release flows publish only after build and verification pass:
 a `TALOS_VERSION` bump on `main` becomes the latest release, while
 `IMAGE_REVISION` rebuilds and manual tags stay prereleases. The package tag is `TALOS_VERSION`, which Tuppr resolves
-directly. Set `IMAGE_REVISION` only for a repair rebuild of the same Talos
-version; that adds `-rpi5.<IMAGE_REVISION>` and needs the runtime alias workflow.
+directly. Set `IMAGE_REVISION` only for a repair rebuild, together with
+`IMAGE_REVISION_VERSION` naming the Talos version it repairs; that adds
+`-rpi5.<IMAGE_REVISION>` and needs the runtime alias workflow. The suffix applies only while
+`IMAGE_REVISION_VERSION` equals `TALOS_VERSION`, so a Renovate bump of `TALOS_VERSION` publishes the
+plain tag even if an old revision is still set.
 
 An unreachable node cannot consume a new installer over its Talos API. Recovery
 of the withdrawn image may require restoring the complete known-working boot

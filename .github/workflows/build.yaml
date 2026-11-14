@@ -58,7 +58,7 @@ jobs:
               echo "Tag $VERSION does not match package version $EXPECTED_VERSION" >&2
               exit 1
             fi
-          elif git diff HEAD~1 HEAD -- Makefile | grep -Eq '^\+(TALOS_VERSION|IMAGE_REVISION) ='; then
+          elif git diff HEAD~1 HEAD -- Makefile | grep -Eq '^\+(TALOS_VERSION|IMAGE_REVISION|IMAGE_REVISION_VERSION) ='; then
             should_build=true
             if git diff HEAD~1 HEAD -- Makefile | grep -Eq '^\+TALOS_VERSION ='; then
               talos_bump=true
