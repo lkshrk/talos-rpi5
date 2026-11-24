@@ -1,4 +1,4 @@
-TALOS_VERSION = v1.14.6
+TALOS_VERSION = v1.14.7
 IMAGE_REVISION = 1
 # The Talos version IMAGE_REVISION repairs; a TALOS_VERSION bump drops the stale -rpi5.N suffix.
 IMAGE_REVISION_VERSION = v1.14.6
